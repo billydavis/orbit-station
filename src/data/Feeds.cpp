@@ -1,5 +1,6 @@
 #include "Feeds.h"
 #include "core/Settings.h"
+#include "net/NetLock.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -67,6 +68,7 @@ namespace feeds {
 
         // GET url into doc. Returns "" or what went wrong.
         String getJson(const String &url, JsonDocument &doc) {
+            net::HttpsTurn turn;
             HTTPClient http;
             http.setTimeout(10000);
             if (!http.begin(url)) return "couldn't start the request";

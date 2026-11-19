@@ -5,6 +5,7 @@
 #include "controls/CountdownControl.h"
 #include "controls/CustomControl.h"
 #include "controls/GaugeControl.h"
+#include "controls/MakapixControl.h"
 #include "controls/ScreensaverControl.h"
 #include "controls/SysMonitorControl.h"
 #include "controls/TickerControl.h"
@@ -34,9 +35,10 @@ namespace orbit {
         ScreensaverControl screensaverControl;
         WeatherControl weatherControl;
         TickerControl tickerControl;
+        MakapixControl makapixControl;
         Control *const CONTROLS[] = {&blankControl,      &timeControl,        &analogClockControl, &gaugeControl,
                                      &sysMonitorControl, &countdownControl,   &customControl,      &screensaverControl,
-                                     &weatherControl,    &tickerControl};
+                                     &weatherControl,    &tickerControl,      &makapixControl};
         constexpr int BLANK = 0;
 
         // Every control orbit-api v1 defines. Ones not in CONTROLS yet are

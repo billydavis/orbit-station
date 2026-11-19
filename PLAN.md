@@ -165,6 +165,36 @@ Each phase ends with a check on the rig before the next one starts.
   fixed 20 ms sleep had capped everything near 15 fps). The radar's 3°
   afterglow slices are triangles: as pie-slice arcs they took 55-72 ms.
 
+## Phase 5 results
+
+- **`makapix` control:** pixel art from Makapix Club through its HTTPS
+  player API (fabkury/makapix `docs/http-api/player-rpc.md`). Params:
+  `channel`, `user`, `hashtag`, `sort` (random by default), `changeSeconds`.
+  Screens on one feed each get a different artwork; views are reported (at
+  most one per 5 s).
+- **Pairing without keys:** the board provisions itself, shows the
+  registration code on the screen, polls until it's registered, then keeps
+  its player key and token in NVS (masked in `GET /api/v1/makapix`;
+  `POST /api/v1/makapix/forget` starts over). A rejected token is renewed
+  with the player key. Provisioning only starts once a screen shows Makapix.
+- **Decoding** (`makapix/Artwork`): PNG (PNGdec), GIF with disposal
+  (AnimatedGIF), still and animated WebP (libwebp vendored from the
+  info-orbs Makapix branch, decode and demux only) and BMP, into RGB565
+  frames in PSRAM at the art's own size; transparency on black. 1 MB budget
+  per artwork; posts over it are skipped before download, using the size and
+  frame count Makapix reports. Checked with stills from 16x16 to 64x64 and
+  animations up to 91 frames (64x64) and 32 frames (128x128).
+- **Playback:** nearest-neighbour, `fit` per screen: `crisp` (default, the
+  largest whole multiple, centred; 256x256 shrinks to 240) or `fill` (covers
+  the whole screen, long edges trimmed, pixels may be slightly uneven). Each
+  screen redraws at its art's frame rate.
+- **Internal RAM:** HTTPS needs about 17 KB of internal RAM in one piece per
+  connection. Small allocations had fragmented it until TLS failed with 80 KB
+  nominally free, so allocations above 256 bytes now go to PSRAM
+  (`heap_caps_malloc_extmem_enable`), and HTTPS connections take turns
+  (`net::HttpsTurn`). Free internal RAM went from a 19.7 KB low point to
+  108 KB; `/api/v1/system` reports `largestFreeBlock`.
+
 ## Open decisions
 
 - None right now.

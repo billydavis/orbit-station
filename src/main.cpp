@@ -16,6 +16,7 @@
 #include "api/DeviceApi.h"
 #include "core/Settings.h"
 #include "data/Feeds.h"
+#include "makapix/Makapix.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "net/Recovery.h"
@@ -25,6 +26,7 @@
 #include <Arduino.h>
 #include <esp_chip_info.h>
 #include <esp_mac.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 
 namespace {
@@ -174,6 +176,12 @@ namespace {
 }
 
 void setup() {
+    // Ordinary allocations above 256 bytes go to PSRAM (Arduino's default is
+    // 4 KB). Internal RAM then stays in large pieces for what must live
+    // there: TLS needs about 17 KB in one block for each HTTPS connection,
+    // and small JSON and string allocations had fragmented it until
+    // connections failed with 80 KB nominally free.
+    heap_caps_malloc_extmem_enable(256);
     pinMode(pins::RST, OUTPUT);
     digitalWrite(pins::RST, HIGH);
     Serial.begin(115200);
@@ -189,6 +197,7 @@ void setup() {
     }
     text::begin();
     feeds::begin();
+    makapix::begin();
     orbit::begin();
     orbit::registerRoutes(net::server());
     api::registerRoutes(net::server());

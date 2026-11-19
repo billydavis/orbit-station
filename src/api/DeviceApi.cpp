@@ -1,6 +1,7 @@
 #include "DeviceApi.h"
 #include "core/Settings.h"
 #include "display/Display.h"
+#include "makapix/Makapix.h"
 #include "net/Network.h"
 #include "orbit/Orbit.h"
 #include <ArduinoJson.h>
@@ -35,6 +36,7 @@ namespace api {
             doc["uptimeSeconds"] = millis() / 1000;
             doc["freeHeap"] = ESP.getFreeHeap();
             doc["minFreeHeap"] = ESP.getMinFreeHeap();
+            doc["largestFreeBlock"] = ESP.getMaxAllocHeap(); // HTTPS needs about 17 KB in one piece
             doc["freePsram"] = ESP.getFreePsram();
             doc["firmware"] = "Orbit Station " ORBIT_STATION_VERSION;
             doc["firmwareBuilt"] = BUILT;
@@ -85,6 +87,18 @@ namespace api {
         s.on("/api/v1/capabilities", HTTP_GET, handleCapabilities);
         s.on("/api/v1/settings", HTTP_GET, handleGetSettings);
         s.on("/api/v1/settings", HTTP_POST, handlePostSettings);
+        // Makapix pairing: state and code; forget erases it (pairs again on next use).
+        s.on("/api/v1/makapix", HTTP_GET, [] {
+            JsonDocument doc;
+            makapix::statusJson(doc.to<JsonObject>());
+            sendJson(200, doc);
+        });
+        s.on("/api/v1/makapix/forget", HTTP_POST, [] {
+            makapix::forget();
+            JsonDocument doc;
+            doc["forgotten"] = true;
+            sendJson(200, doc);
+        });
         s.onNotFound([] { sendError(404, "not found: " + server->uri()); });
     }
 
