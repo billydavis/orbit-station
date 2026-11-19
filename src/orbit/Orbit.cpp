@@ -2,11 +2,15 @@
 #include "Control.h"
 #include "controls/AnalogClockControl.h"
 #include "controls/BlankControl.h"
+#include "controls/CountdownControl.h"
+#include "controls/CustomControl.h"
 #include "controls/GaugeControl.h"
+#include "controls/SysMonitorControl.h"
 #include "controls/TimeControl.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "ui/StatusScreen.h"
+#include <LittleFS.h>
 #include <Preferences.h>
 
 namespace orbit {
@@ -20,7 +24,11 @@ namespace orbit {
         TimeControl timeControl;
         AnalogClockControl analogClockControl;
         GaugeControl gaugeControl;
-        Control *const CONTROLS[] = {&blankControl, &timeControl, &analogClockControl, &gaugeControl};
+        SysMonitorControl sysMonitorControl;
+        CountdownControl countdownControl;
+        CustomControl customControl;
+        Control *const CONTROLS[] = {&blankControl, &timeControl, &analogClockControl, &gaugeControl,
+                                     &sysMonitorControl, &countdownControl, &customControl};
         constexpr int BLANK = 0;
 
         // Every control orbit-api v1 defines. Ones not in CONTROLS yet are
@@ -49,18 +57,24 @@ namespace orbit {
             uint32_t updatedAt = 0; // millis() of the last API write; 0 after a restart
             bool dirty = true;      // needs drawing now
             uint32_t lastDraw = 0;
+            // What the screen showed before a control that isn't saved (a
+            // countdown) took it over: put back on stop, and saved in its place.
+            int previous = -1;
+            JsonDocument previousParams;
         };
         Slot slots[NUM_SCREENS];
         SemaphoreHandle_t layoutLock; // the API (core 1) writes while the renderer (core 0) reads
-        String savedLayout;           // what's in NVS now, to skip writing when nothing changed
 
         struct Lock {
             Lock() { xSemaphoreTake(layoutLock, portMAX_DELAY); }
             ~Lock() { xSemaphoreGive(layoutLock); }
         };
 
-        // Checks one {control, params} entry. Returns 0, or 400/501 with error.
-        int parseConfig(JsonObjectConst entry, int &control, JsonDocument &params, String &error) {
+        // Checks one {control, params} entry. For an API write, screen is the
+        // target (the layout must be locked) so a control can check the write
+        // against what the screen shows; -1 when restoring the saved layout.
+        // Returns 0, or 400/501 with error.
+        int parseConfig(JsonObjectConst entry, int screen, int &control, JsonDocument &params, String &error) {
             if (!entry["control"].is<const char *>()) {
                 error = "missing or invalid 'control'";
                 return 400;
@@ -82,16 +96,41 @@ namespace orbit {
             }
             params.clear();
             JsonObject out = params.to<JsonObject>();
-            return CONTROLS[control]->parse(p.as<JsonObjectConst>(), out, error);
+            if (screen < 0) return CONTROLS[control]->parse(p.as<JsonObjectConst>(), out, error);
+            const bool same = slots[screen].control == control;
+            WriteContext ctx = {screen, same, same ? slots[screen].params.as<JsonObjectConst>() : JsonObjectConst()};
+            return CONTROLS[control]->parseWrite(ctx, p.as<JsonObjectConst>(), out, error);
         }
 
-        // Call with the layout locked.
-        void applyConfig(int screen, int control, const JsonDocument &params, bool fromApi) {
+        void show(int screen, int control, const JsonDocument &params) {
             Slot &s = slots[screen];
             s.control = control;
             s.params = params;
-            if (fromApi) s.updatedAt = millis();
             s.dirty = true;
+        }
+
+        // Applies an API write. Call with the layout locked.
+        void applyWrite(int screen, int control, const JsonDocument &params, JsonObjectConst request) {
+            Slot &s = slots[screen];
+            Control *next = CONTROLS[control];
+            if (!next->saved() && CONTROLS[s.control]->saved()) {
+                // Taking over the screen: remember what was there.
+                s.previous = s.control;
+                s.previousParams = s.params;
+            } else if (next->saved()) {
+                s.previous = -1;
+                s.previousParams.clear();
+            }
+            show(screen, control, params);
+            s.updatedAt = millis();
+            if (next->applied(screen, request, s.params.as<JsonObjectConst>()) == AfterWrite::Restore) {
+                const int back = s.previous >= 0 ? s.previous : BLANK;
+                JsonDocument backParams = s.previousParams;
+                s.previous = -1;
+                s.previousParams.clear();
+                show(screen, back, backParams);
+                CONTROLS[back]->applied(screen, JsonObjectConst(), s.params.as<JsonObjectConst>());
+            }
         }
 
         void reportSlot(int screen, JsonObject out) {
@@ -99,42 +138,101 @@ namespace orbit {
             out["screen"] = screen;
             out["control"] = CONTROLS[s.control]->name();
             // Always an object, {} for a control without params, never null.
-            out["params"].to<JsonObject>().set(s.params.as<JsonObjectConst>());
+            JsonObject p = out["params"].to<JsonObject>();
+            p.set(s.params.as<JsonObjectConst>());
+            CONTROLS[s.control]->report(screen, p);
             out["updatedAt"] = s.updatedAt;
         }
 
         // ---- Saving ----
-        // The layout as saved: GET's shape without updatedAt or live readings.
-        // Call with the layout locked.
-        String layoutForSaving() {
+        // The layout (which control each screen shows, and its settings) is
+        // one JSON blob in NVS. Drawings are too big for NVS (about 8 KB to
+        // spare) and go in LittleFS files instead. Each is written only when
+        // its saved form changes.
+        String savedLayout;               // what's in NVS
+        String savedDrawing[NUM_SCREENS]; // what's in each drawing file ("" = none)
+        bool filesReady = false;
+
+        String drawingPath(int screen) { return "/orbit-draw" + String(screen) + ".json"; }
+
+        bool mountFiles() {
+            if (!filesReady) {
+                // Formats the data partition on first use.
+                filesReady = LittleFS.begin(true);
+                if (!filesReady) Serial.println("OrbIt: couldn't mount LittleFS; drawings won't be saved");
+            }
+            return filesReady;
+        }
+
+        // What a screen is saved as: its control, unless that's never saved
+        // (countdown); then what it showed before.
+        void savedConfig(int screen, int &control, JsonObjectConst &params) {
+            const Slot &s = slots[screen];
+            if (CONTROLS[s.control]->saved()) {
+                control = s.control;
+                params = s.params.as<JsonObjectConst>();
+            } else if (s.previous >= 0) {
+                control = s.previous;
+                params = s.previousParams.as<JsonObjectConst>();
+            } else {
+                control = BLANK;
+                params = JsonObjectConst();
+            }
+        }
+
+        // Writes whatever changed. Call with the layout locked. Returns false
+        // if something couldn't be written.
+        bool persistLayout() {
+            bool ok = true;
             JsonDocument doc;
             JsonArray screens = doc["screens"].to<JsonArray>();
             for (int i = 0; i < NUM_SCREENS; i++) {
+                int control;
+                JsonObjectConst params;
+                savedConfig(i, control, params);
                 JsonObject e = screens.add<JsonObject>();
-                e["control"] = CONTROLS[slots[i].control]->name();
-                JsonObject p = e["params"].to<JsonObject>();
-                p.set(slots[i].params.as<JsonObjectConst>());
-                CONTROLS[slots[i].control]->stripLive(p);
-            }
-            String out;
-            serializeJson(doc, out);
-            return out;
-        }
+                e["control"] = CONTROLS[control]->name();
 
-        // Writes the layout if its saved form changed. Call with the layout
-        // locked. Returns false if it couldn't be written.
-        bool persistLayout() {
-            const String layout = layoutForSaving();
-            if (layout == savedLayout) return true;
-            Preferences prefs;
-            if (!prefs.begin("orbit", false)) return false;
-            const bool ok = prefs.putString("layout", layout) == layout.length();
-            prefs.end();
-            if (ok) {
-                savedLayout = layout;
-                Serial.println("OrbIt: saved layout to NVS");
-            } else {
-                Serial.println("OrbIt: couldn't save the layout");
+                String drawing;
+                if (CONTROLS[control]->savedInFile()) {
+                    serializeJson(params, drawing);
+                } else {
+                    JsonObject p = e["params"].to<JsonObject>();
+                    p.set(params);
+                    CONTROLS[control]->stripLive(p); // live readings never go to flash
+                }
+                if (drawing != savedDrawing[i]) {
+                    bool written = mountFiles();
+                    if (written && drawing.length()) {
+                        File f = LittleFS.open(drawingPath(i), "w");
+                        written = f && f.print(drawing) == drawing.length();
+                        if (f) f.close();
+                        if (!written) LittleFS.remove(drawingPath(i)); // never leave half a drawing
+                    } else if (written) {
+                        LittleFS.remove(drawingPath(i));
+                    }
+                    if (written) {
+                        savedDrawing[i] = drawing;
+                        Serial.printf("OrbIt: saved screen %d's drawing (%u bytes)\n", i, (unsigned) drawing.length());
+                    } else {
+                        Serial.printf("OrbIt: couldn't save screen %d's drawing\n", i);
+                        ok = false;
+                    }
+                }
+            }
+            String layout;
+            serializeJson(doc, layout);
+            if (layout != savedLayout) {
+                Preferences prefs;
+                const bool written = prefs.begin("orbit", false) && prefs.putString("layout", layout) == layout.length();
+                prefs.end();
+                if (written) {
+                    savedLayout = layout;
+                    Serial.println("OrbIt: saved layout to NVS");
+                } else {
+                    Serial.println("OrbIt: couldn't save the layout");
+                    ok = false;
+                }
             }
             return ok;
         }
@@ -145,7 +243,7 @@ namespace orbit {
             params["showDate"] = true;
             params["showDay"] = true;
             params["format24Hour"] = false;
-            applyConfig(2, findControl("time"), params, false);
+            show(2, findControl("time"), params);
         }
 
         void loadLayout() {
@@ -153,24 +251,31 @@ namespace orbit {
             prefs.begin("orbit", true);
             const String saved = prefs.getString("layout", "");
             prefs.end();
-            if (saved.isEmpty()) {
-                setDefaultLayout();
-                return;
-            }
             JsonDocument doc;
-            if (deserializeJson(doc, saved) || !doc["screens"].is<JsonArray>()) {
-                Serial.println("OrbIt: saved layout unreadable, using the default");
+            if (saved.isEmpty() || deserializeJson(doc, saved) || !doc["screens"].is<JsonArray>()) {
+                if (saved.length()) Serial.println("OrbIt: saved layout unreadable, using the default");
                 setDefaultLayout();
                 return;
             }
             int i = 0;
-            for (JsonObjectConst entry : doc["screens"].as<JsonArrayConst>()) {
+            for (JsonObject entry : doc["screens"].as<JsonArray>()) {
                 if (i >= NUM_SCREENS) break;
+                const int c = findControl(entry["control"] | "");
+                if (c >= 0 && CONTROLS[c]->savedInFile() && mountFiles()) {
+                    // The drawing is in its own file.
+                    File f = LittleFS.open(drawingPath(i), "r");
+                    if (f) {
+                        savedDrawing[i] = f.readString();
+                        f.close();
+                        JsonDocument drawing;
+                        if (!deserializeJson(drawing, savedDrawing[i])) entry["params"] = drawing;
+                    }
+                }
                 int control;
                 JsonDocument params;
                 String error;
-                if (parseConfig(entry, control, params, error) == 0) {
-                    applyConfig(i, control, params, false);
+                if (parseConfig(entry, -1, control, params, error) == 0) {
+                    show(i, control, params);
                 } else {
                     Serial.printf("OrbIt: saved screen %d not restored (%s)\n", i, error.c_str());
                 }
@@ -211,7 +316,7 @@ namespace orbit {
                         due = now - s.lastDraw >= STATUS_REFRESH_MS;
                     } else {
                         Lock lock;
-                        const uint32_t every = CONTROLS[s.control]->refreshMs(s.params.as<JsonObjectConst>());
+                        const uint32_t every = CONTROLS[s.control]->refreshMs(i, s.params.as<JsonObjectConst>());
                         due = s.dirty || (every && now - s.lastDraw >= every);
                     }
                     if (!due) continue;
@@ -283,16 +388,16 @@ namespace orbit {
                 sendError(400, "body must be a JSON object");
                 return;
             }
+            Lock lock;
             int control;
             JsonDocument params;
             String error;
-            if (int status = parseConfig(body.as<JsonObjectConst>(), control, params, error)) {
+            if (int status = parseConfig(body.as<JsonObjectConst>(), screen, control, params, error)) {
                 sendError(status, error);
                 return;
             }
+            applyWrite(screen, control, params, body["params"].as<JsonObjectConst>());
             JsonDocument doc;
-            Lock lock;
-            applyConfig(screen, control, params, true);
             if (!persistLayout()) doc["warning"] = NOT_SAVED_WARNING;
             reportSlot(screen, doc.to<JsonObject>());
             sendJson(200, doc);
@@ -307,8 +412,10 @@ namespace orbit {
             }
             // Check every entry before applying any, so a bad one can't leave
             // half a batch applied.
+            Lock lock;
             int screens[NUM_SCREENS], controls[NUM_SCREENS];
             JsonDocument params[NUM_SCREENS];
+            JsonObjectConst requests[NUM_SCREENS];
             int count = 0;
             for (JsonObjectConst entry : body["screens"].as<JsonArrayConst>()) {
                 if (count >= NUM_SCREENS) {
@@ -325,15 +432,15 @@ namespace orbit {
                     return;
                 }
                 String error;
-                if (int status = parseConfig(entry, controls[count], params[count], error)) {
+                if (int status = parseConfig(entry, screen, controls[count], params[count], error)) {
                     sendError(status, "screen " + String(screen) + ": " + error);
                     return;
                 }
+                requests[count] = entry["params"].as<JsonObjectConst>();
                 screens[count++] = screen;
             }
+            for (int i = 0; i < count; i++) applyWrite(screens[i], controls[i], params[i], requests[i]);
             JsonDocument doc;
-            Lock lock;
-            for (int i = 0; i < count; i++) applyConfig(screens[i], controls[i], params[i], true);
             if (!persistLayout()) doc["warning"] = NOT_SAVED_WARNING;
             JsonArray out = doc["screens"].to<JsonArray>();
             for (int i = 0; i < NUM_SCREENS; i++) reportSlot(i, out.add<JsonObject>());

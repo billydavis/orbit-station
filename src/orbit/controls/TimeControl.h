@@ -15,7 +15,7 @@ namespace orbit {
         const char *name() const override { return "time"; }
         int parse(JsonObjectConst params, JsonObject out, String &error) const override;
         void draw(LGFX_Sprite &spr, JsonObjectConst params, const DrawContext &ctx) override;
-        uint32_t refreshMs(JsonObjectConst) const override { return 1000; }
+        uint32_t refreshMs(int, JsonObjectConst) const override { return 1000; }
     };
 
 }

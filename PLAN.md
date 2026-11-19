@@ -138,6 +138,21 @@ Each phase ends with a check on the rig before the next one starts.
 - **Screen 1** shows the network status while the board isn't online and
   for 15 s after it comes online; otherwise its own control.
 
+## Phase 4 results
+
+- **Batch 1:** `analogClock`, `gauge` (value never saved). Shared param
+  helpers in `orbit/Control.cpp` (colours as RGB565 or info-orbs' names).
+- **Batch 2:** `sysMonitor` (all readings live, only `center` saved),
+  `countdown` (commands checked against the screen's state; never saved: the
+  screen is saved, and restored on `stop`, as what it showed before) and
+  `custom` (WebDataWidget drawings; saved to `/orbit-draw{n}.json` on LittleFS
+  only when the drawing changes; overlay frames never touch flash). Each
+  custom screen keeps its accumulated picture in PSRAM so overlays build on
+  it; the display core's own pictures are always a frame behind.
+- The control interface grew optional hooks for this: `parseWrite` (sees
+  the screen's current state), `applied`, `report` (live state in GET),
+  `saved()` and `savedInFile()`.
+
 ## Open decisions
 
 - None right now.

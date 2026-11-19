@@ -17,6 +17,20 @@ namespace orbit {
         uint32_t nowMs; // millis() for this frame
     };
 
+    // An API write to one screen, for controls whose writes depend on what
+    // the screen shows now (countdown's actions, custom's overlays).
+    struct WriteContext {
+        int screen;
+        bool sameControl;        // the screen already shows this control
+        JsonObjectConst current; // its params then (null otherwise)
+    };
+
+    // What the layout should do after a write was applied.
+    enum class AfterWrite {
+        Keep,    // the usual: the screen shows the new config
+        Restore, // put back what the screen showed before (countdown's stop)
+    };
+
     class Control {
     public:
         virtual ~Control() = default;
@@ -39,7 +53,24 @@ namespace orbit {
 
         // How often the picture can change by itself, in ms (a clock: 1000).
         // 0 = only when its params change.
-        virtual uint32_t refreshMs(JsonObjectConst params) const { return 0; }
+        virtual uint32_t refreshMs(int screen, JsonObjectConst params) const { return 0; }
+
+        // ---- Optional, for controls with state of their own ----
+        // All are called with the layout locked.
+
+        // An API write to a known screen. Default: parse().
+        virtual int parseWrite(const WriteContext &ctx, JsonObjectConst params, JsonObject out, String &error) {
+            return parse(params, out, error);
+        }
+        // After an API write was applied; request is the params as sent.
+        virtual AfterWrite applied(int screen, JsonObjectConst request, JsonObjectConst stored) { return AfterWrite::Keep; }
+        // Adds live state (not params) to what GET reports.
+        virtual void report(int screen, JsonObject params) {}
+        // false: never saved. The screen is saved as what it showed before.
+        virtual bool saved() const { return true; }
+        // true: params are too big for the layout (drawings) and are saved
+        // in a file of their own, written only when they change.
+        virtual bool savedInFile() const { return false; }
     };
 
     // ---- Shared param helpers ----
