@@ -57,8 +57,23 @@ Lessons from the bench that must be built in:
 4. Don't set both `cfg.invert` and `invertDisplay(true)`; they cancel out.
 5. Don't DMA whole frames straight from PSRAM while the other core draws into
    PSRAM. Copy them through an internal-RAM DMA buffer in 20-line bands.
-6. A long-running task on core 0 must yield (`vTaskDelay(1)`) at least every
-   ~100 ms, or the idle task starves and the watchdog reboots the board.
+6. A long-running task must yield (`vTaskDelay(1)`) at least every ~100 ms.
+   On core 0 the idle task starves and the watchdog reboots the board; on
+   core 1 a busy sender at a higher priority than `loop()` silenced serial
+   completely (found in phase 1).
+7. LovyanGFX remembers the last drawing window it sent and skips re-sending
+   it. Each screen has its own window, so forget it on every CS switch
+   (`PanelGC9A01::forgetWindow()`), or partial updates land in the wrong place.
+
+## Phase 1 results
+
+Tile diff with a fingerprint per 16×16 tile (no second copy of each screen):
+about 26 frames/s per screen on all five with the test animation redrawing
+whole pictures, about 26% of each frame sent. Comparing two full copies of
+each picture managed only 19. Paused (nothing changes, nothing sent) it
+reaches 32, the limit of redrawing five whole pictures on core 0. The bench's
+37 came from redrawing and sending only the changed boxes without comparing.
+If a control ever needs more, let it pass the areas it changed to `endFrame()`.
 
 Re-init one screen at a time through its own CS, without the shared RST, so the
 others don't blank.
