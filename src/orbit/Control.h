@@ -42,7 +42,21 @@ namespace orbit {
         virtual uint32_t refreshMs(JsonObjectConst params) const { return 0; }
     };
 
-    // Shared param helpers. Each returns 0 or 400 with error set.
+    // ---- Shared param helpers ----
+    // Each reads one optional param from in, writes it (or the fallback, if it
+    // was left out) to out, and returns 0, or 400 with error set.
+
     int optionalBool(JsonObjectConst in, JsonObject out, const char *key, bool fallback, String &error);
+    int optionalNumber(JsonObjectConst in, JsonObject out, const char *key, float fallback, String &error);
+    int optionalString(JsonObjectConst in, JsonObject out, const char *key, const char *fallback, size_t maxLength, String &error);
+    // One of a fixed set of names; choices ends with nullptr.
+    int optionalChoice(JsonObjectConst in, JsonObject out, const char *key, const char *const *choices, String &error);
+    // A colour: an RGB565 integer (0-65535) or a name ("cyan"); reported as
+    // the integer, so what GET returns can be sent straight back. null and ""
+    // mean the default.
+    int optionalColor(JsonObjectConst in, JsonObject out, const char *key, uint16_t fallback, String &error);
+
+    // The named colours orbit-api accepts (same values as info-orbs').
+    bool colorFromName(String name, uint16_t &out);
 
 }

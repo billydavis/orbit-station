@@ -1,6 +1,8 @@
 #include "Orbit.h"
 #include "Control.h"
+#include "controls/AnalogClockControl.h"
 #include "controls/BlankControl.h"
+#include "controls/GaugeControl.h"
 #include "controls/TimeControl.h"
 #include "display/Display.h"
 #include "net/Network.h"
@@ -9,21 +11,6 @@
 
 namespace orbit {
 
-    // ---- Shared param helpers ----
-    int optionalBool(JsonObjectConst in, JsonObject out, const char *key, bool fallback, String &error) {
-        JsonVariantConst v = in[key];
-        if (v.isNull()) {
-            out[key] = fallback;
-            return 0;
-        }
-        if (!v.is<bool>()) {
-            error = String("params.") + key + " must be true or false";
-            return 400;
-        }
-        out[key] = v.as<bool>();
-        return 0;
-    }
-
     namespace {
         constexpr int NUM_SCREENS = display::NUM_SCREENS;
         const char *NOT_SAVED_WARNING = "applied, but it could not be saved - it will not survive a reboot";
@@ -31,7 +18,9 @@ namespace orbit {
         // ---- Controls ----
         BlankControl blankControl;
         TimeControl timeControl;
-        Control *const CONTROLS[] = {&blankControl, &timeControl};
+        AnalogClockControl analogClockControl;
+        GaugeControl gaugeControl;
+        Control *const CONTROLS[] = {&blankControl, &timeControl, &analogClockControl, &gaugeControl};
         constexpr int BLANK = 0;
 
         // Every control orbit-api v1 defines. Ones not in CONTROLS yet are
