@@ -1,23 +1,26 @@
 // Orbit Station: OrbIt firmware for five GC9A01 screens on an ESP32-S3.
-// Phase 2: display core with a test animation, WiFi setup and recovery.
-// Screen 1 shows the network status; screens 2-5 show the test animation.
+// Each screen shows what the orbit-api sets (see orbit/Orbit.h). Screen 1
+// shows the network status while the board isn't online.
 //
 // Serial commands (115200, end with Enter):
 //   r        re-initialise all screens (shared RST wire)
 //   r <1-5>  re-initialise one screen through its CS line; the others keep going
 //   i <1-5>  toggle colour inversion on one screen
-//   p        pause/resume the animation (paused: screens 2-5 not drawn at all)
+//   f        frames sent per screen, every 5 s (on/off)
 //   n        network status
 //   w        forget the saved WiFi and restart into setup
 //   l        list the WiFi networks the board can see
 //   s        status
 //   ?        help
 
-#include "demo/Demo.h"
+#include "api/DeviceApi.h"
+#include "core/Settings.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "net/Recovery.h"
+#include "orbit/Orbit.h"
 #include "pins.h"
+#include "ui/Text.h"
 #include <Arduino.h>
 #include <esp_chip_info.h>
 #include <esp_mac.h>
@@ -65,7 +68,7 @@ namespace {
     }
 
     void printStatus() {
-        Serial.printf("SPI %lu MHz, animation %s\n", (unsigned long) (display::SPI_HZ / 1000000), demo::paused() ? "paused" : "running");
+        Serial.printf("SPI %lu MHz\n", (unsigned long) (display::SPI_HZ / 1000000));
         Serial.print("Inverted:");
         for (int s = 0; s < display::NUM_SCREENS; s++) Serial.printf(" %d=%s", s + 1, display::inverted(s) ? "on" : "off");
         Serial.println();
@@ -76,12 +79,14 @@ namespace {
         Serial.println("r        re-initialise all screens");
         Serial.println("r <1-5>  re-initialise one screen (others keep going)");
         Serial.println("i <1-5>  toggle colour inversion on one screen");
-        Serial.println("p        pause/resume the animation");
+        Serial.println("f        frames sent per screen, every 5 s (on/off)");
         Serial.println("n        network status");
         Serial.println("w        forget the saved WiFi and restart into setup");
         Serial.println("l        list the WiFi networks the board can see");
         Serial.println("s        status");
     }
+
+    bool reporting = false;
 
     void handleSerial() {
         if (!Serial.available()) return;
@@ -109,9 +114,9 @@ namespace {
             display::setInverted(screen, !display::inverted(screen));
             Serial.printf("Screen %d inversion %s\n", screen + 1, display::inverted(screen) ? "on" : "off");
             break;
-        case 'p':
-            demo::setPaused(!demo::paused());
-            Serial.printf("Animation %s\n", demo::paused() ? "paused" : "running");
+        case 'f':
+            reporting = !reporting;
+            Serial.printf("Frame report %s\n", reporting ? "on" : "off");
             break;
         case 's':
             printStatus();
@@ -144,6 +149,10 @@ namespace {
         const uint32_t elapsed = millis() - last;
         if (elapsed < 5000) return;
         last = millis();
+        if (!reporting) {
+            for (int s = 0; s < display::NUM_SCREENS; s++) display::takeStats(s); // keep counts fresh
+            return;
+        }
 
         uint32_t frames = 0, tiles = 0, whole = 0, busyUs = 0;
         Serial.print("fps");
@@ -169,13 +178,17 @@ void setup() {
     for (uint32_t start = millis(); !Serial && millis() - start < 3000;) delay(10);
     logBoot();
     recovery::begin(); // before anything reads saved settings
+    settings::begin();
 
     if (!display::begin()) {
         Serial.println("Display core failed to start");
         return;
     }
+    text::begin();
+    orbit::begin();
+    orbit::registerRoutes(net::server());
+    api::registerRoutes(net::server());
     net::begin();
-    demo::begin();
     printStatus();
     printHelp();
 }

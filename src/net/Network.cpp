@@ -1,4 +1,5 @@
 #include "Network.h"
+#include "core/TimeKeeper.h"
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <WiFi.h>
@@ -53,7 +54,9 @@ namespace net {
             html += "<li>WiFi " + String(s.ssid) + ", signal " + String(WiFi.RSSI()) + " dBm</li>";
             html += "<li>Up " + String(millis() / 1000) + " s</li>";
             html += "<li>Free memory " + String(ESP.getFreeHeap() / 1024) + " KB, PSRAM " + String(ESP.getFreePsram() / 1024) + " KB</li>";
-            html += F("</ul></body></html>");
+            html += F("</ul><p>API: <a href='/orbit/api/v1/screens'>/orbit/api/v1/screens</a>, "
+                      "<a href='/api/v1/system'>/api/v1/system</a>, <a href='/api/v1/settings'>/api/v1/settings</a></p>"
+                      "</body></html>");
             web.send(200, "text/html", html);
         }
 
@@ -77,6 +80,8 @@ namespace net {
                 ArduinoOTA.begin(); // also starts mDNS with our hostname
                 MDNS.addService("http", "tcp", 80);
                 MDNS.addServiceTxt("http", "tcp", "path", "/");
+                // How OrbIt clients (Command Center) recognise an OrbIt board.
+                MDNS.addServiceTxt("http", "tcp", "orbit", "/orbit/api/v1/screens");
                 otaStarted = true;
                 Serial.printf("Network: reachable at http://%s.local/\n", current.hostname);
             }
@@ -91,6 +96,7 @@ namespace net {
             setText(current.ip, sizeof(current.ip), WiFi.localIP().toString());
             setState(State::Connected);
             Serial.printf("Network: connected to %s as %s\n", current.ssid, current.ip);
+            timekeeper::startSync();
             startServices();
         }
 

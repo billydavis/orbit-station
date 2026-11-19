@@ -112,6 +112,32 @@ Each phase ends with a check on the rig before the next one starts.
   regulator was damaged on the bench (runs fine with WiFi off, browns out with
   it on). The PCB needs bulk capacitance (~470–1000 µF) on its 5 V input.
 
+## Phase 3 results
+
+- **orbit-api v1** at `/orbit/api/v1`: `GET`/`POST /screens`, `GET`/`POST
+  /screens/{n}`, `GET /capabilities`, with info-orbs' shapes, status codes and
+  error messages. Controls orbit-api defines but this build doesn't have yet
+  answer 501, not 400. A bulk write with a bad entry changes nothing.
+- **Board-wide:** `GET /api/v1/system` and `GET /api/v1/capabilities` (what
+  Command Center reads; OrbIt is the one "widget"), and `GET`/`POST
+  /api/v1/settings` for `timezone`, `units` and the weather and ticker API
+  keys (reported masked). The `_http._tcp` mDNS service carries
+  `orbit=/orbit/api/v1/screens` for discovery.
+- **Controls are classes** (`orbit/Control.h`): `parse` checks and normalises
+  params, `draw` paints the whole picture, `stripLive` removes live readings
+  before saving, `refreshMs` says how often it changes by itself. A render
+  task on core 0 draws each screen when its config changes or its refresh
+  time comes round; the display core sends only what changed.
+- **Saving:** the layout is one JSON blob in NVS (`orbit`/`layout`), written
+  only when its saved form changes; checked on the board (identical writes
+  don't touch flash, a change writes once, a restart restores everything).
+- **Time:** SNTP once online, timezone by IANA name through `assets/zones.csv`
+  built into the firmware (or a POSIX rule given directly); no API key.
+- **Text:** Roboto through OpenFontRender, drawn into each screen's picture,
+  with info-orbs' sizes and scaling, so ported controls look the same.
+- **Screen 1** shows the network status while the board isn't online and
+  for 15 s after it comes online; otherwise its own control.
+
 ## Open decisions
 
 - None right now.
