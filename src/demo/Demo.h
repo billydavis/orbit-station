@@ -5,8 +5,7 @@
 
 namespace demo {
     void begin();
-    // While paused, the same frame is drawn over and over, so the display core
-    // should find nothing changed and send nothing.
+    // While paused, screens 2-5 aren't drawn at all; only the status screen.
     void setPaused(bool paused);
     bool paused();
 }

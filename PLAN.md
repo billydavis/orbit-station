@@ -92,7 +92,26 @@ Each phase ends with a check on the rig before the next one starts.
 | 5 | **Images and animation.** Makapix-style control: fetch or upload, decode PNG, GIF and WebP into PSRAM, play animations | Full-size animations play smoothly |
 | 6 | **Hardening.** Watchdog, memory monitoring, periodic screen re-init, error reporting | A day-long run stays clean |
 
+## Phase 2 results
+
+- **Setup:** with no saved WiFi the board opens the hotspot `OrbitStation-xx`
+  (last MAC byte); WiFiManager's page saves the network. If the saved network
+  can't be reached for 3 minutes the hotspot reopens for 5, then it tries again.
+- **Name:** `orbit-station-xx.local`, advertised as `_http._tcp` (Command Center
+  also needs the `orbit` TXT record, added with the API in phase 3).
+- **Updates over WiFi:** `pio run -e s3-ota -t upload --upload-port <name or IP>`.
+  The board connects back to the PC on TCP 47269, so the PC firewall must allow it.
+- **Factory reset:** three power-ups in a row, each under 10 s. Only power-on
+  resets count, so crashes, brownouts and flasher resets can't trigger it.
+- **Mesh networks:** one eero node refused the ESP32-S3 every time (reason 2)
+  while another accepted it. After 4 refusals the board scans for every access
+  point with the saved name and tries them strongest first; the one that works
+  is saved with the network, so restarts go straight to it.
+- **Power:** WiFi's current bursts need a solid 3.3 V. Never tie the board's
+  3V3 to another regulator's output; screens get their own supply. One board's
+  regulator was damaged on the bench (runs fine with WiFi off, browns out with
+  it on). The PCB needs bulk capacitance (~470–1000 µF) on its 5 V input.
+
 ## Open decisions
 
-- **Recovery without buttons (phase 2).** Suggested: reopen the setup hotspot if
-  WiFi fails for a few minutes; "reset everything" on three quick power cycles.
+- None right now.

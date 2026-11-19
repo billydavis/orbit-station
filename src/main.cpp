@@ -1,16 +1,22 @@
 // Orbit Station: OrbIt firmware for five GC9A01 screens on an ESP32-S3.
-// Phase 1: display core with a test animation.
+// Phase 2: display core with a test animation, WiFi setup and recovery.
+// Screen 1 shows the network status; screens 2-5 show the test animation.
 //
 // Serial commands (115200, end with Enter):
 //   r        re-initialise all screens (shared RST wire)
 //   r <1-5>  re-initialise one screen through its CS line; the others keep going
 //   i <1-5>  toggle colour inversion on one screen
-//   p        pause/resume the animation (paused: frames repeat, nothing is sent)
+//   p        pause/resume the animation (paused: screens 2-5 not drawn at all)
+//   n        network status
+//   w        forget the saved WiFi and restart into setup
+//   l        list the WiFi networks the board can see
 //   s        status
 //   ?        help
 
 #include "demo/Demo.h"
 #include "display/Display.h"
+#include "net/Network.h"
+#include "net/Recovery.h"
 #include "pins.h"
 #include <Arduino.h>
 #include <esp_chip_info.h>
@@ -71,6 +77,9 @@ namespace {
         Serial.println("r <1-5>  re-initialise one screen (others keep going)");
         Serial.println("i <1-5>  toggle colour inversion on one screen");
         Serial.println("p        pause/resume the animation");
+        Serial.println("n        network status");
+        Serial.println("w        forget the saved WiFi and restart into setup");
+        Serial.println("l        list the WiFi networks the board can see");
         Serial.println("s        status");
     }
 
@@ -106,6 +115,22 @@ namespace {
             break;
         case 's':
             printStatus();
+            break;
+        case 'n': {
+            const net::Status n = net::status();
+            const char *names[] = {"connecting", "setup hotspot open", "connected", "updating"};
+            Serial.printf("Network: %s, WiFi \"%s\", address %s, %s.local, hotspot %s\n", names[(int) n.state], n.ssid, n.ip,
+                          n.hostname, n.apName);
+            break;
+        }
+        case 'w':
+            net::forgetWifi();
+            break;
+        case 'l':
+            net::scan();
+            break;
+        case 't':
+            net::setTxPower(rest.toFloat());
             break;
         default:
             printHelp();
@@ -143,17 +168,21 @@ void setup() {
     // Give the USB serial port a moment to open so the boot log isn't lost.
     for (uint32_t start = millis(); !Serial && millis() - start < 3000;) delay(10);
     logBoot();
+    recovery::begin(); // before anything reads saved settings
 
     if (!display::begin()) {
         Serial.println("Display core failed to start");
         return;
     }
+    net::begin();
     demo::begin();
     printStatus();
     printHelp();
 }
 
 void loop() {
+    net::loop();
+    recovery::loop();
     handleSerial();
     report();
     delay(10);

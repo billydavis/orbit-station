@@ -1,5 +1,6 @@
 #include "Demo.h"
 #include "display/Display.h"
+#include "ui/StatusScreen.h"
 #include <Arduino.h>
 
 namespace demo {
@@ -36,9 +37,22 @@ namespace demo {
             uint32_t secondStart = millis();
             uint32_t lastYield = millis();
             for (;;) {
+                if (isPaused) {
+                    // Stopped: no drawing on screens 2-5 at all (frozen on their
+                    // last frame), only the status screen, a few times a second.
+                    LGFX_Sprite &spr = display::beginFrame(0);
+                    ui::drawStatus(spr);
+                    display::endFrame(0);
+                    vTaskDelay(pdMS_TO_TICKS(200));
+                    continue;
+                }
                 for (int s = 0; s < display::NUM_SCREENS; s++) {
                     LGFX_Sprite &spr = display::beginFrame(s);
-                    drawFrame(spr, s, tick, fps);
+                    if (s == 0) {
+                        ui::drawStatus(spr); // screen 1 shows the network status
+                    } else {
+                        drawFrame(spr, s, tick, fps);
+                    }
                     display::endFrame(s);
                 }
                 frames++;
