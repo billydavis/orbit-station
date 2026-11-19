@@ -20,4 +20,8 @@ namespace text {
     // Width in pixels the text would take at this size.
     int width(const String &str, unsigned size);
 
+    // The largest text that fits in w x h pixels, like info-orbs'
+    // drawFittedString.
+    void drawFitted(LGFX_Sprite &spr, const String &str, int x, int y, int w, int h, Align align, uint16_t fg, uint16_t bg);
+
 }

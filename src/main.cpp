@@ -15,6 +15,7 @@
 
 #include "api/DeviceApi.h"
 #include "core/Settings.h"
+#include "data/Feeds.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "net/Recovery.h"
@@ -165,8 +166,10 @@ namespace {
             busyUs += st.busyUs;
         }
         const float sentPct = frames ? 100.0f * tiles / frames / display::TILES_PER_FRAME : 0;
-        Serial.printf(" | %.0f%% of each frame sent, %lu whole | sender busy %.0f%%\n", sentPct, (unsigned long) whole,
+        Serial.printf(" | %.0f%% of each frame sent, %lu whole | sender busy %.0f%% | draw ms", sentPct, (unsigned long) whole,
                       busyUs / 10.0f / elapsed);
+        for (int s = 0; s < display::NUM_SCREENS; s++) Serial.printf(" %.1f", orbit::takeDrawUs(s) / 1000.0f);
+        Serial.println();
     }
 }
 
@@ -185,6 +188,7 @@ void setup() {
         return;
     }
     text::begin();
+    feeds::begin();
     orbit::begin();
     orbit::registerRoutes(net::server());
     api::registerRoutes(net::server());

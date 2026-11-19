@@ -87,7 +87,17 @@ namespace orbit {
     // mean the default.
     int optionalColor(JsonObjectConst in, JsonObject out, const char *key, uint16_t fallback, String &error);
 
+    // Like optionalColor, but writes the key only if the client gave it (for
+    // params GET reports only when set).
+    int colorIfSet(JsonObjectConst in, JsonObject out, const char *key, String &error);
+
     // The named colours orbit-api accepts (same values as info-orbs').
     bool colorFromName(String name, uint16_t &out);
+
+    // An RGB565 colour scaled towards black; level 255 = unchanged.
+    inline uint16_t dim(uint16_t c, uint8_t level) {
+        const uint16_t r = ((c >> 11) & 0x1F) * level / 255, g = ((c >> 5) & 0x3F) * level / 255, b = (c & 0x1F) * level / 255;
+        return (r << 11) | (g << 5) | b;
+    }
 
 }

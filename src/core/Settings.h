@@ -13,6 +13,7 @@ namespace settings {
         String timezone;      // IANA name ("America/Chicago") or a POSIX rule
         bool metric = false;  // date format now; weather units later
         String weatherApiKey; // Visual Crossing
+        String weatherLocation; // default for weather screens without their own
         String tickerApiKey;  // twelvedata
     };
 

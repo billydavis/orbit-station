@@ -152,6 +152,18 @@ Each phase ends with a check on the rig before the next one starts.
 - The control interface grew optional hooks for this: `parseWrite` (sees
   the screen's current state), `applied`, `report` (live state in GET),
   `saved()` and `savedInFile()`.
+- **Batch 3:** `screensaver` (asteroids, matrix, warp, orrery, radar, cycle;
+  the old `asteroids` control is an alias), `weather` (Visual Crossing, a
+  location per screen, dark mode only) and `ticker` (twelvedata, 5-minute
+  floor), plus `POST /screens/{n}/refresh` and `POST /weather/preview`. API
+  keys and the default weather location come from `/api/v1/settings`; no key
+  is built into the firmware. Fetching runs in its own task (`data/Feeds`)
+  and only for what a screen shows; readings are never saved.
+- **Speed:** with all five effects on screen, about 19.5 frames/s each
+  (target 20); every effect draws in 5-8 ms. The render loop keeps each
+  screen on a steady cadence and sleeps only until the next one is due (a
+  fixed 20 ms sleep had capped everything near 15 fps). The radar's 3°
+  afterglow slices are triangles: as pie-slice arcs they took 55-72 ms.
 
 ## Open decisions
 

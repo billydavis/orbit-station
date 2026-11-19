@@ -29,6 +29,7 @@ namespace settings {
         v.timezone = prefs.getString("tz", "UTC");
         v.metric = prefs.getBool("metric", false);
         v.weatherApiKey = prefs.getString("weatherKey", "");
+        v.weatherLocation = prefs.getString("weatherLoc", "");
         v.tickerApiKey = prefs.getString("tickerKey", "");
         prefs.end();
         current = v;
@@ -67,9 +68,9 @@ namespace settings {
             }
             next.metric = u == "metric";
         }
-        const char *keyFields[] = {"weatherApiKey", "tickerApiKey"};
-        String *keyValues[] = {&next.weatherApiKey, &next.tickerApiKey};
-        for (int i = 0; i < 2; i++) {
+        const char *keyFields[] = {"weatherApiKey", "tickerApiKey", "weatherLocation"};
+        String *keyValues[] = {&next.weatherApiKey, &next.tickerApiKey, &next.weatherLocation};
+        for (int i = 0; i < 3; i++) {
             JsonVariantConst k = req[keyFields[i]];
             if (k.isNull()) continue;
             if (!k.is<const char *>() || k.as<String>().length() > 128) {
@@ -90,6 +91,7 @@ namespace settings {
         if (next.metric != current.metric) saved &= prefs.putBool("metric", next.metric) > 0;
         if (next.weatherApiKey != current.weatherApiKey) saved &= saveString(prefs, "weatherKey", next.weatherApiKey);
         if (next.tickerApiKey != current.tickerApiKey) saved &= saveString(prefs, "tickerKey", next.tickerApiKey);
+        if (next.weatherLocation != current.weatherLocation) saved &= saveString(prefs, "weatherLoc", next.weatherLocation);
         prefs.end();
 
         current = next;
@@ -103,6 +105,7 @@ namespace settings {
         out["units"] = v.metric ? "metric" : "imperial";
         out["weatherApiKey"] = masked(v.weatherApiKey);
         out["tickerApiKey"] = masked(v.tickerApiKey);
+        out["weatherLocation"] = v.weatherLocation;
         out["timeSet"] = timekeeper::isSet();
     }
 

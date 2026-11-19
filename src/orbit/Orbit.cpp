@@ -5,8 +5,12 @@
 #include "controls/CountdownControl.h"
 #include "controls/CustomControl.h"
 #include "controls/GaugeControl.h"
+#include "controls/ScreensaverControl.h"
 #include "controls/SysMonitorControl.h"
+#include "controls/TickerControl.h"
 #include "controls/TimeControl.h"
+#include "controls/WeatherControl.h"
+#include "data/Feeds.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "ui/StatusScreen.h"
@@ -27,8 +31,12 @@ namespace orbit {
         SysMonitorControl sysMonitorControl;
         CountdownControl countdownControl;
         CustomControl customControl;
-        Control *const CONTROLS[] = {&blankControl, &timeControl, &analogClockControl, &gaugeControl,
-                                     &sysMonitorControl, &countdownControl, &customControl};
+        ScreensaverControl screensaverControl;
+        WeatherControl weatherControl;
+        TickerControl tickerControl;
+        Control *const CONTROLS[] = {&blankControl,      &timeControl,        &analogClockControl, &gaugeControl,
+                                     &sysMonitorControl, &countdownControl,   &customControl,      &screensaverControl,
+                                     &weatherControl,    &tickerControl};
         constexpr int BLANK = 0;
 
         // Every control orbit-api v1 defines. Ones not in CONTROLS yet are
@@ -79,7 +87,17 @@ namespace orbit {
                 error = "missing or invalid 'control'";
                 return 400;
             }
-            const String name = entry["control"].as<String>();
+            String name = entry["control"].as<String>();
+            JsonVariantConst p = entry["params"];
+            JsonDocument alias;
+            if (name == "asteroids") {
+                // A control of its own before it became a screensaver effect;
+                // still accepted from older clients and saved layouts.
+                name = "screensaver";
+                if (p.is<JsonObjectConst>()) alias.set(p);
+                alias["effect"] = "asteroids";
+                p = alias.as<JsonVariantConst>();
+            }
             control = findControl(name);
             if (control < 0) {
                 if (isV1Control(name)) {
@@ -89,7 +107,6 @@ namespace orbit {
                 error = "unknown control '" + name + "'";
                 return 400;
             }
-            JsonVariantConst p = entry["params"];
             if (!p.isNull() && !p.is<JsonObjectConst>()) {
                 error = "'params' must be an object";
                 return 400;
@@ -301,26 +318,36 @@ namespace orbit {
             return millis() - onlineSince < SHOW_ADDRESS_MS;
         }
 
+        uint32_t drawUs[NUM_SCREENS], drawCount[NUM_SCREENS]; // for the serial frame report
+
         void renderTask(void *) {
             bool statusWasShowing = false;
             for (;;) {
-                const uint32_t now = millis();
                 const bool status = statusShowing();
                 if (statusWasShowing && !status) slots[0].dirty = true; // back to screen 1's own content
                 statusWasShowing = status;
+                uint32_t sleepMs = 20; // until the next screen is due
 
                 for (int i = 0; i < NUM_SCREENS; i++) {
                     Slot &s = slots[i];
-                    bool due;
+                    const uint32_t now = millis();
+                    uint32_t every;
+                    bool dirty;
                     if (i == 0 && status) {
-                        due = now - s.lastDraw >= STATUS_REFRESH_MS;
+                        every = STATUS_REFRESH_MS;
+                        dirty = false;
                     } else {
                         Lock lock;
-                        const uint32_t every = CONTROLS[s.control]->refreshMs(i, s.params.as<JsonObjectConst>());
-                        due = s.dirty || (every && now - s.lastDraw >= every);
+                        every = CONTROLS[s.control]->refreshMs(i, s.params.as<JsonObjectConst>());
+                        dirty = s.dirty;
                     }
-                    if (!due) continue;
+                    const uint32_t since = now - s.lastDraw;
+                    if (!dirty && !(every && since >= every)) {
+                        if (every) sleepMs = min(sleepMs, every - since);
+                        continue;
+                    }
 
+                    const uint32_t started = micros();
                     LGFX_Sprite &spr = display::beginFrame(i);
                     {
                         Lock lock;
@@ -331,11 +358,16 @@ namespace orbit {
                             CONTROLS[s.control]->draw(spr, s.params.as<JsonObjectConst>(), ctx);
                             s.dirty = false;
                         }
-                        s.lastDraw = now;
+                        // Keep a steady cadence: count from when this frame was
+                        // due, unless it's fallen a whole frame behind.
+                        s.lastDraw = every && since < 2 * every ? s.lastDraw + every : now;
                     }
                     display::endFrame(i);
+                    drawUs[i] += micros() - started;
+                    drawCount[i]++;
+                    if (every) sleepMs = min(sleepMs, every);
                 }
-                vTaskDelay(pdMS_TO_TICKS(20));
+                vTaskDelay(pdMS_TO_TICKS(max(sleepMs, (uint32_t) 1)));
             }
         }
 
@@ -447,9 +479,52 @@ namespace orbit {
             sendJson(200, doc);
         }
 
+        // Ticker screens only: fetch the price now, whatever the interval.
+        void handleRefresh(int screen) {
+            Lock lock;
+            if (CONTROLS[slots[screen].control] != &tickerControl) {
+                sendError(400, "screen " + String(screen) + " isn't a ticker");
+                return;
+            }
+            feeds::refreshQuote(slots[screen].params["symbol"].as<String>());
+            JsonDocument doc;
+            reportSlot(screen, doc.to<JsonObject>());
+            sendJson(200, doc);
+        }
+
+        // Made-up readings on every weather screen, until the next fetch.
+        void handleWeatherPreview() {
+            JsonDocument body;
+            if (!readBody(body)) return;
+            if (!body.is<JsonObject>()) {
+                sendError(400, "body must be a JSON object");
+                return;
+            }
+            float values[3];
+            const char *keys[] = {"temperature", "high", "low"};
+            JsonDocument doc;
+            for (int i = 0; i < 3; i++) {
+                JsonVariantConst v = body[keys[i]];
+                if (!v.isNull() && !v.is<float>()) {
+                    sendError(400, String(keys[i]) + " must be a number");
+                    return;
+                }
+                values[i] = v.isNull() ? NAN : v.as<float>();
+                if (!v.isNull()) doc[keys[i]] = values[i];
+            }
+            feeds::previewWeather(values[0], values[1], values[2]);
+            Lock lock;
+            for (Slot &s : slots) {
+                if (CONTROLS[s.control] == &weatherControl) s.dirty = true;
+            }
+            sendJson(200, doc);
+        }
+
         void handleCapabilities() {
             JsonDocument doc;
             listControls(doc["controls"].to<JsonArray>());
+            JsonArray effects = doc["screensaverEffects"].to<JsonArray>();
+            for (int i = 0; ScreensaverControl::EFFECTS[i]; i++) effects.add(ScreensaverControl::EFFECTS[i]);
             doc["api"] = String(API_BASE) + "/screens";
             sendJson(200, doc);
         }
@@ -473,8 +548,16 @@ namespace orbit {
             const String uri = screensUri + "/" + i;
             s.on(uri, HTTP_GET, [i] { handleGetScreen(i); });
             s.on(uri, HTTP_POST, [i] { handlePostScreen(i); });
+            s.on(uri + "/refresh", HTTP_POST, [i] { handleRefresh(i); });
         }
+        s.on(String(API_BASE) + "/weather/preview", HTTP_POST, handleWeatherPreview);
         s.on(String(API_BASE) + "/capabilities", HTTP_GET, handleCapabilities);
+    }
+
+    uint32_t takeDrawUs(int screen) {
+        const uint32_t avg = drawCount[screen] ? drawUs[screen] / drawCount[screen] : 0;
+        drawUs[screen] = drawCount[screen] = 0;
+        return avg;
     }
 
     void listControls(JsonArray out) {

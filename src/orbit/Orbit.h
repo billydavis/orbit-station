@@ -23,4 +23,8 @@ namespace orbit {
     // Controls built into this firmware, for the capabilities endpoints.
     void listControls(JsonArray out);
 
+    // Average time a frame of this screen took to draw since the last call, in
+    // microseconds (for the serial frame report).
+    uint32_t takeDrawUs(int screen);
+
 }

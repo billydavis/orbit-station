@@ -23,6 +23,27 @@ namespace text {
         return true;
     }
 
+    namespace {
+        void drawPx(LGFX_Sprite &spr, const String &str, int x, int y, unsigned px, Align align, uint16_t fg, uint16_t bg) {
+            render.setDrawer(spr);
+            FT_BBox box = render.calculateBoundingBox(0, 0, px, Align::TopLeft, Layout::Horizontal, str.c_str());
+            render.setAlignment(align);
+            render.setFontSize(px);
+            render.drawString(str.c_str(), x, y - box.yMin, fg, bg);
+        }
+    }
+
+    void drawFitted(LGFX_Sprite &spr, const String &str, int x, int y, int w, int h, Align align, uint16_t fg, uint16_t bg) {
+        if (str.isEmpty()) return;
+        unsigned px = h;
+        while (px > 8) {
+            FT_BBox box = render.calculateBoundingBox(0, 0, px, Align::TopLeft, Layout::Horizontal, str.c_str());
+            if (box.xMax - box.xMin <= w && box.yMax - box.yMin <= h) break;
+            px--;
+        }
+        drawPx(spr, str, x, y, px, align, fg, bg);
+    }
+
     void draw(LGFX_Sprite &spr, const String &str, int x, int y, unsigned size, Align align, uint16_t fg, uint16_t bg) {
         render.setDrawer(spr);
         const unsigned px = scaled(size);

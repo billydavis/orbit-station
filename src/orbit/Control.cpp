@@ -89,6 +89,12 @@ namespace orbit {
         return 400;
     }
 
+    int colorIfSet(JsonObjectConst in, JsonObject out, const char *key, String &error) {
+        JsonVariantConst v = in[key];
+        if (v.isNull() || (v.is<const char *>() && v.as<String>().isEmpty())) return 0;
+        return optionalColor(in, out, key, 0, error);
+    }
+
     bool colorFromName(String name, uint16_t &out) {
         struct Named {
             const char *name;
