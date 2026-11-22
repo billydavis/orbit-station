@@ -1,5 +1,6 @@
 #include "Orbit.h"
 #include "Control.h"
+#include "Transition.h"
 #include "controls/AnalogClockControl.h"
 #include "controls/BlankControl.h"
 #include "controls/CountdownControl.h"
@@ -12,6 +13,7 @@
 #include "controls/TimeControl.h"
 #include "controls/WeatherControl.h"
 #include "data/Feeds.h"
+#include "core/Health.h"
 #include "display/Display.h"
 #include "net/Network.h"
 #include "ui/StatusScreen.h"
@@ -234,7 +236,7 @@ namespace orbit {
                         savedDrawing[i] = drawing;
                         Serial.printf("OrbIt: saved screen %d's drawing (%u bytes)\n", i, (unsigned) drawing.length());
                     } else {
-                        Serial.printf("OrbIt: couldn't save screen %d's drawing\n", i);
+                        health::event("OrbIt: couldn't save screen %d's drawing", i);
                         ok = false;
                     }
                 }
@@ -249,7 +251,7 @@ namespace orbit {
                     savedLayout = layout;
                     Serial.println("OrbIt: saved layout to NVS");
                 } else {
-                    Serial.println("OrbIt: couldn't save the layout");
+                    health::event("OrbIt: couldn't save the layout");
                     ok = false;
                 }
             }
@@ -321,10 +323,23 @@ namespace orbit {
         }
 
         uint32_t drawUs[NUM_SCREENS], drawCount[NUM_SCREENS]; // for the serial frame report
+        volatile bool stallRequested = false;
 
         void renderTask(void *) {
             bool statusWasShowing = false;
             for (;;) {
+                health::beat(health::Task::Render);
+                if (stallRequested) {
+                    // Watchdog test (serial z): stop responding for a while.
+                    stallRequested = false;
+                    vTaskDelay(pdMS_TO_TICKS(15000));
+                }
+                // Screens the display core needs whole again (re-init, refresh).
+                if (const uint32_t wanted = display::takeFrameRequests()) {
+                    for (int i = 0; i < NUM_SCREENS; i++) {
+                        if (wanted & (1u << i)) slots[i].dirty = true;
+                    }
+                }
                 const bool status = statusShowing();
                 if (statusWasShowing && !status) slots[0].dirty = true; // back to screen 1's own content
                 statusWasShowing = status;
@@ -342,6 +357,7 @@ namespace orbit {
                         Lock lock;
                         every = CONTROLS[s.control]->refreshMs(i, s.params.as<JsonObjectConst>());
                         dirty = s.dirty;
+                        if (transition::active(i)) every = every ? min(every, transition::FRAME_MS) : transition::FRAME_MS;
                     }
                     const uint32_t since = now - s.lastDraw;
                     if (!dirty && !(every && since >= every)) {
@@ -351,6 +367,8 @@ namespace orbit {
 
                     const uint32_t started = micros();
                     LGFX_Sprite &spr = display::beginFrame(i);
+                    uint32_t content = 0;
+                    char choice[16] = "none";
                     {
                         Lock lock;
                         if (i == 0 && status) {
@@ -359,11 +377,16 @@ namespace orbit {
                             DrawContext ctx = {i, now};
                             CONTROLS[s.control]->draw(spr, s.params.as<JsonObjectConst>(), ctx);
                             s.dirty = false;
+                            content = CONTROLS[s.control]->contentId(i);
+                            strlcpy(choice, s.params["transition"] | "none", sizeof(choice));
                         }
                         // Keep a steady cadence: count from when this frame was
                         // due, unless it's fallen a whole frame behind.
                         s.lastDraw = every && since < 2 * every ? s.lastDraw + every : now;
                     }
+                    // Outside the lock: the API shouldn't wait for this.
+                    if (i == 0 && status) transition::cancel(i);
+                    else transition::apply(i, spr, content, choice);
                     display::endFrame(i);
                     drawUs[i] += micros() - started;
                     drawCount[i]++;
@@ -527,6 +550,8 @@ namespace orbit {
             listControls(doc["controls"].to<JsonArray>());
             JsonArray effects = doc["screensaverEffects"].to<JsonArray>();
             for (int i = 0; ScreensaverControl::EFFECTS[i]; i++) effects.add(ScreensaverControl::EFFECTS[i]);
+            JsonArray transitions = doc["transitions"].to<JsonArray>();
+            for (int i = 0; transition::CHOICES[i]; i++) transitions.add(transition::CHOICES[i]);
             doc["api"] = String(API_BASE) + "/screens";
             sendJson(200, doc);
         }
@@ -561,6 +586,8 @@ namespace orbit {
         drawUs[screen] = drawCount[screen] = 0;
         return avg;
     }
+
+    void stallForTest() { stallRequested = true; }
 
     void listControls(JsonArray out) {
         for (Control *c : CONTROLS) out.add(c->name());

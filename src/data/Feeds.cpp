@@ -1,4 +1,5 @@
 #include "Feeds.h"
+#include "core/Health.h"
 #include "core/Settings.h"
 #include "net/NetLock.h"
 #include <ArduinoJson.h>
@@ -106,7 +107,7 @@ namespace feeds {
                 Serial.printf("Feeds: weather for %s: %.0f\n", location.c_str(), w.temperature);
             } else {
                 w.problem = problem.startsWith("refused") ? "Location not found" : "Weather unavailable";
-                Serial.printf("Feeds: weather for %s failed: %s\n", location.c_str(), problem.c_str());
+                health::event("Weather for %s failed: %s", location.c_str(), problem.c_str());
             }
             Lock l;
             for (WeatherEntry &e : weathers) {
@@ -141,7 +142,7 @@ namespace feeds {
             } else {
                 // twelvedata answers 200 with {"status":"error"} for a bad symbol or key.
                 q.problem = doc["message"].is<const char *>() ? "Symbol not found" : "Price unavailable";
-                Serial.printf("Feeds: quote for %s failed: %s\n", symbol.c_str(), problem.length() ? problem.c_str() : (doc["message"] | "no price"));
+                health::event("Price for %s failed: %s", symbol.c_str(), problem.length() ? problem.c_str() : (doc["message"] | "no price"));
             }
             Lock l;
             for (QuoteEntry &e : quotes) {
@@ -156,6 +157,7 @@ namespace feeds {
         void task(void *) {
             for (;;) {
                 vTaskDelay(pdMS_TO_TICKS(500));
+                health::beat(health::Task::Feeds);
                 if (WiFi.status() != WL_CONNECTED) continue;
                 const settings::Values s = settings::get();
 

@@ -27,4 +27,7 @@ namespace orbit {
     // microseconds (for the serial frame report).
     uint32_t takeDrawUs(int screen);
 
+    // Watchdog test: the render task stops responding for 15 s (serial z).
+    void stallForTest();
+
 }

@@ -28,6 +28,32 @@ namespace display {
             endWrite();
         }
 
+        // Re-sends the setup commands to the selected screen with no reset and
+        // the 120 ms wait after "sleep out" cut to 10 ms. A screen that's been
+        // running all along keeps its picture and doesn't blink (the values are
+        // the ones it already has); one that was unplugged and plugged back in
+        // wakes up configured. Quick enough not to stall the other screens.
+        void refreshQuietly() {
+            startWrite(true);
+            for (uint8_t i = 0; auto cmds = getInitCommands(i); i++) {
+                for (;;) {
+                    const uint8_t cmd = *cmds++, num = *cmds++;
+                    if (cmd == 0xFF && num == 0xFF) break;
+                    writeCommand(cmd, 1);
+                    _bus->flush();
+                    for (uint8_t n = num & ~CMD_INIT_DELAY; n; n--) {
+                        writeData(*cmds++, 1);
+                        _bus->flush();
+                    }
+                    if (num & CMD_INIT_DELAY) {
+                        cmds++; // the original delay
+                        delay(10);
+                    }
+                }
+            }
+            endWrite();
+        }
+
         // LovyanGFX skips re-sending the drawing window when it matches the last
         // one it sent. Each screen has its own window, so forget it whenever we
         // switch screens.

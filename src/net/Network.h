@@ -42,6 +42,10 @@ namespace net {
 
     // Erases the saved WiFi and restarts into setup.
     void forgetWifi();
+    // Test: drop WiFi as if the router kept refusing, so the access point scan runs.
+    void testFallback();
+    // Test: drop WiFi with auto-reconnect off, as after a router reboot, so the retry has to bring it back.
+    void testQuietRadio();
 
     // Phase 3 adds the API routes here. Only running while connected.
     WebServer &server();

@@ -1,4 +1,6 @@
 #include "Network.h"
+#include "core/BuildStamp.h"
+#include "core/Health.h"
 #include "core/TimeKeeper.h"
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
@@ -49,7 +51,7 @@ namespace net {
                       "<meta name=viewport content='width=device-width,initial-scale=1'>"
                       "<title>Orbit Station</title></head><body style='font-family:sans-serif'>"
                       "<h1>Orbit Station</h1><ul>");
-            html += "<li>Firmware " ORBIT_STATION_VERSION " (built " __DATE__ " " __TIME__ ")</li>";
+            html += String("<li>Firmware " ORBIT_STATION_VERSION " (built ") + BUILD_STAMP + ")</li>";
             html += "<li>Address " + String(s.ip) + " (" + s.hostname + ".local)</li>";
             html += "<li>WiFi " + String(s.ssid) + ", signal " + String(WiFi.RSSI()) + " dBm</li>";
             html += "<li>Up " + String(millis() / 1000) + " s</li>";
@@ -64,7 +66,8 @@ namespace net {
             if (!otaStarted) {
                 ArduinoOTA.setHostname(current.hostname);
                 ArduinoOTA.onStart([] {
-                    Serial.println("Update: receiving new firmware");
+                    health::pause(true); // the update blocks the loop until it's done
+                    health::event("Update: receiving new firmware");
                     setState(State::Updating);
                 });
                 ArduinoOTA.onProgress([](unsigned int done, unsigned int total) {
@@ -74,7 +77,8 @@ namespace net {
                 });
                 ArduinoOTA.onEnd([] { Serial.println("Update: done, restarting"); });
                 ArduinoOTA.onError([](ota_error_t e) {
-                    Serial.printf("Update failed (error %u)\n", e);
+                    health::pause(false);
+                    health::event("Update failed (error %u)", e);
                     setState(State::Connected);
                 });
                 ArduinoOTA.begin(); // also starts mDNS with our hostname
@@ -95,7 +99,7 @@ namespace net {
             setText(current.ssid, sizeof(current.ssid), WiFi.SSID());
             setText(current.ip, sizeof(current.ip), WiFi.localIP().toString());
             setState(State::Connected);
-            Serial.printf("Network: connected to %s as %s\n", current.ssid, current.ip);
+            health::event("Network: connected to %s as %s", current.ssid, current.ip);
             timekeeper::startSync();
             startServices();
         }
@@ -132,14 +136,49 @@ namespace net {
             return reason == 2 || reason == 15 || reason == 201 || reason == 202 || reason == 203 || reason == 204;
         }
 
-        void findAccessPoints(const String &ssid) {
+        // The scan for other access points runs in the background: a full scan
+        // takes several seconds, longer than the loop's 5 s watchdog allows.
+        bool scanning = false;
+        uint32_t scanStarted = 0;
+        constexpr uint32_t SCAN_TIMEOUT_MS = 20000;
+
+        void startAccessPointScan() {
             accessPoints.clear();
             nextAccessPoint = 0;
             // A scan fails while a connection attempt is running.
             WiFi.setAutoReconnect(false);
             WiFi.disconnect(false);
-            delay(300);
-            const int n = WiFi.scanNetworks();
+            delay(100);
+            scanning = WiFi.scanNetworks(true) == WIFI_SCAN_RUNNING;
+            scanStarted = millis();
+            if (!scanning) {
+                // Couldn't start one; keep trying the saved network instead.
+                Serial.println("Network: couldn't start a scan, retrying the saved network");
+                WiFi.setAutoReconnect(true);
+                WiFi.begin();
+            }
+        }
+
+        void connectNextAccessPoint() {
+            WiFi.setAutoReconnect(true);
+            if (accessPoints.empty() || nextAccessPoint >= accessPoints.size()) {
+                WiFi.begin(); // nothing (more) in range; keep trying the saved network
+                return;
+            }
+            const String ssid = wm.getWiFiSSID(true);
+            const String pass = wm.getWiFiPass(true);
+            const AccessPoint &ap = accessPoints[nextAccessPoint++];
+            Serial.printf("Network: trying access point %02X:%02X:%02X:%02X:%02X:%02X (channel %d, %d dBm)\n", ap.bssid[0],
+                          ap.bssid[1], ap.bssid[2], ap.bssid[3], ap.bssid[4], ap.bssid[5], (int) ap.channel, (int) ap.rssi);
+            WiFi.begin(ssid.c_str(), pass.c_str(), ap.channel, ap.bssid);
+        }
+
+        // Called each time round the loop while a scan runs; never waits.
+        void checkAccessPointScan() {
+            const int n = WiFi.scanComplete();
+            if (n == WIFI_SCAN_RUNNING && millis() - scanStarted < SCAN_TIMEOUT_MS) return;
+            scanning = false;
+            const String ssid = wm.getWiFiSSID(true);
             for (int i = 0; i < n; i++) {
                 if (WiFi.SSID(i) != ssid) continue;
                 AccessPoint ap;
@@ -153,30 +192,37 @@ namespace net {
             std::sort(accessPoints.begin(), accessPoints.end(),
                       [](const AccessPoint &a, const AccessPoint &b) { return a.rssi > b.rssi; });
             Serial.printf("Network: %u access point(s) found for %s\n", (unsigned) accessPoints.size(), ssid.c_str());
+            refusals = 0;
+            connectNextAccessPoint();
         }
 
+        // Auto-reconnect sometimes goes quiet (no attempts, no refusals), e.g. after
+        // the router reboots. If nothing has happened for this long, try again ourselves.
+        constexpr uint32_t RETRY_MS = 30000;
+        uint32_t lastAttempt = 0;
+
         void tryNextAccessPoint() {
-            const String ssid = wm.getWiFiSSID(true);
-            const String pass = wm.getWiFiPass(true);
             refusals = 0;
-            if (nextAccessPoint >= accessPoints.size()) findAccessPoints(ssid);
-            if (accessPoints.empty()) {
-                WiFi.begin(); // nothing in range; keep trying the saved network
-                return;
+            lastAttempt = millis();
+            if (nextAccessPoint >= accessPoints.size()) {
+                startAccessPointScan(); // connects when the scan finishes
+            } else {
+                connectNextAccessPoint();
             }
-            const AccessPoint &ap = accessPoints[nextAccessPoint++];
-            Serial.printf("Network: trying access point %02X:%02X:%02X:%02X:%02X:%02X (channel %d, %d dBm)\n", ap.bssid[0],
-                          ap.bssid[1], ap.bssid[2], ap.bssid[3], ap.bssid[4], ap.bssid[5], (int) ap.channel, (int) ap.rssi);
-            WiFi.begin(ssid.c_str(), pass.c_str(), ap.channel, ap.bssid);
         }
 
         void connectSaved() {
             WiFi.mode(WIFI_STA);
             lowPower();
             refusals = 0;
+            if (scanning) {
+                WiFi.scanDelete();
+                scanning = false;
+            }
             accessPoints.clear(); // look again: access points may have changed
             nextAccessPoint = 0;
             WiFi.begin(); // the network saved by the setup page
+            lastAttempt = millis();
             setText(current.ssid, sizeof(current.ssid), wm.getWiFiSSID(true));
             setText(current.ip, sizeof(current.ip), "");
             setState(State::Connecting);
@@ -254,12 +300,17 @@ namespace net {
     void loop() {
         switch (status().state) {
         case State::Connecting:
-            if (WiFi.status() == WL_CONNECTED) {
+            if (scanning) {
+                checkAccessPointScan();
+            } else if (WiFi.status() == WL_CONNECTED) {
                 onConnected();
             } else if (refusals >= REFUSALS_BEFORE_SWITCHING) {
                 tryNextAccessPoint();
+            } else if (millis() - lastAttempt >= RETRY_MS) {
+                Serial.println("Network: still not connected, trying again");
+                tryNextAccessPoint();
             } else if (millis() - stateSince >= CONNECT_TIMEOUT_MS) {
-                Serial.println("Network: can't reach the saved network");
+                health::event("Network: can't reach the saved network, opening setup");
                 openSetup(true);
             }
             break;
@@ -280,8 +331,9 @@ namespace net {
 
         case State::Connected:
             if (WiFi.status() != WL_CONNECTED) {
-                Serial.println("Network: lost WiFi, reconnecting");
+                health::event("Network: lost WiFi, reconnecting");
                 setState(State::Connecting); // auto-reconnect keeps trying meanwhile
+                lastAttempt = millis();
                 break;
             }
             ArduinoOTA.handle();
@@ -305,6 +357,7 @@ namespace net {
 
     void scan() {
         Serial.println("Network: scanning...");
+        health::pause(true); // a full scan outlasts the loop watchdog
         // A scan fails while the board keeps retrying a connection, so pause that.
         const bool retrying = status().state == State::Connecting;
         if (retrying) {
@@ -325,6 +378,22 @@ namespace net {
             WiFi.setAutoReconnect(true);
             WiFi.begin();
         }
+        health::pause(false);
+    }
+
+    void testFallback() {
+        Serial.println("Network test: dropping WiFi and acting as if refused, so the access point scan runs");
+        WiFi.disconnect(false);
+        refusals = REFUSALS_BEFORE_SWITCHING;
+        accessPoints.clear();
+        nextAccessPoint = 0;
+        setState(State::Connecting);
+    }
+
+    void testQuietRadio() {
+        Serial.println("Network test: dropping WiFi with auto-reconnect off; expect a retry within 30 s");
+        WiFi.setAutoReconnect(false);
+        WiFi.disconnect(false);
     }
 
     void setTxPower(float dBm) {

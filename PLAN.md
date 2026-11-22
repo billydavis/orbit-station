@@ -195,6 +195,63 @@ Each phase ends with a check on the rig before the next one starts.
   (`net::HttpsTurn`). Free internal RAM went from a 19.7 KB low point to
   108 KB; `/api/v1/system` reports `largestFreeBlock`.
 
+## Phase 6 results
+
+- **Watchdog** (`core/Health`): the display sender, renderer, feeds and
+  Makapix tasks beat as they work (deadlines 10 s, 10 s, 120 s, 180 s; the
+  network tasks block on long downloads). A silent task makes the board
+  record why and restart. The Arduino loop is on the hardware watchdog,
+  paused during updates over WiFi. The reason survives the restart (RTC
+  memory) and shows in `/api/v1/system` (`lastRestart`,
+  `lastRestartDetail`). Checked with serial `z`, which freezes the renderer:
+  restart after 10 s, reason kept.
+- **Memory watch:** a largest free internal block under 20 KB (too small for
+  HTTPS) for 3 minutes restarts the board; a summary is logged every 15
+  minutes; `lowestLargestFreeBlock` is reported.
+- **Event log:** the last 48 events with times at `GET /api/v1/log`.
+- **Quiet screen refresh:** every 30 s one screen in turn gets its setup
+  re-sent (no reset; the 120 ms sleep-out wait cut to 10 ms) and a whole
+  frame, requested from the renderer even for still screens. Checked: no
+  visible blink; a screen whose power was unplugged and replugged came back
+  by itself.
+- **Soak:** 24 hours, polled from the PC every 5 minutes (results below).
+
+### Soak results (2026-11-20 13:36 to 2026-11-21 13:37)
+
+Third run, after fixes for what the first two found: a blocking WiFi scan that
+tripped the watchdog, and a silent reconnect after a router update.
+
+- **Reachable:** 288 of 288 checks. No WiFi drops logged; signal -29 to -35 dBm.
+- **Restarts:** one crash, at 21:16 on 11-20 (`LoadProhibited`, core 0). The
+  backtrace points into lwIP's DNS timer (`dns_send` to `udp_sendto_if_src`),
+  which resembles arduino-esp32 issue 9388. It was decoded against a newer ELF
+  than the one that crashed, so the location is **not yet confirmed**. The board
+  recovered by itself and then ran for over 16 hours until the soak ended.
+- **Internal memory:** free heap 106-159 KB at the checks, lowest ever 97 KB.
+- **Largest free block:** 82-115 KB at the checks. The all-time low kept
+  falling after the crash: 86, 82, 78, then 72 KB at 09:27, and held there for
+  the last 4 hours. Still far above the 20 KB restart threshold, but one day
+  can't show whether it has levelled off.
+- **PSRAM:** 4.5-7.2 MB free.
+
+Still open:
+
+- Confirm the crash location by rebuilding the exact firmware that crashed.
+- Test the Makapix outage fix with WiFi up and the internet down. The `q` WiFi
+  test doesn't reach that code, because Makapix waits while WiFi is down.
+- A real router reboot on the 30-second retry build.
+- A longer run to see whether the largest-block low flattens out.
+
+### After the soak
+
+- **Transitions:** `orbit/Transition` plays a 0.8 s change between two pictures
+  on a screen (13 effects adapted from Pixel Jukebox; `random`, `none` or one by
+  name). A control opts in with `contentId()` and a `transition` param; only
+  `makapix` does so far. The choice is a setting and is saved.
+- **Art released early:** a 1 ms timing wrap made about 1 in 5 artworks drop to
+  "Loading art" before their time. Fixed; in a 5-minute check every change
+  waited its full interval.
+
 ## Open decisions
 
 - None right now.

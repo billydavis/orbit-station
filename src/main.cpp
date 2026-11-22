@@ -10,10 +10,15 @@
 //   n        network status
 //   w        forget the saved WiFi and restart into setup
 //   l        list the WiFi networks the board can see
+//   x        WiFi test: drop the connection and run the access point fallback
+//   q        WiFi test: drop the connection with auto-reconnect off (the 30 s retry brings it back)
+//   z        watchdog test: the renderer stops responding (the board restarts)
 //   s        status
 //   ?        help
 
 #include "api/DeviceApi.h"
+#include "core/BuildStamp.h"
+#include "core/Health.h"
 #include "core/Settings.h"
 #include "data/Feeds.h"
 #include "makapix/Makapix.h"
@@ -61,7 +66,7 @@ namespace {
         uint8_t mac[6];
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
-        Serial.printf("\nOrbit Station %s (built %s %s)\n", ORBIT_STATION_VERSION, __DATE__, __TIME__);
+        Serial.printf("\nOrbit Station %s (built %s)\n", ORBIT_STATION_VERSION, BUILD_STAMP);
         Serial.printf("Chip: %s rev %d, %d cores, %lu MHz\n", ESP.getChipModel(), chip.revision, chip.cores, (unsigned long) ESP.getCpuFreqMHz());
         Serial.printf("Flash: %lu MB\n", (unsigned long) (ESP.getFlashChipSize() / (1024 * 1024)));
         Serial.printf("PSRAM: %lu KB total, %lu KB free\n", (unsigned long) (ESP.getPsramSize() / 1024), (unsigned long) (ESP.getFreePsram() / 1024));
@@ -86,6 +91,8 @@ namespace {
         Serial.println("n        network status");
         Serial.println("w        forget the saved WiFi and restart into setup");
         Serial.println("l        list the WiFi networks the board can see");
+        Serial.println("x        WiFi test: drop the connection and run the access point fallback");
+        Serial.println("q        WiFi test: drop the connection with auto-reconnect off");
         Serial.println("s        status");
     }
 
@@ -136,6 +143,16 @@ namespace {
             break;
         case 'l':
             net::scan();
+            break;
+        case 'x':
+            net::testFallback();
+            break;
+        case 'q':
+            net::testQuietRadio();
+            break;
+        case 'z':
+            Serial.println("Watchdog test: the renderer will stop responding; expect a restart in about 10 s");
+            orbit::stallForTest();
             break;
         case 't':
             net::setTxPower(rest.toFloat());
@@ -188,6 +205,7 @@ void setup() {
     // Give the USB serial port a moment to open so the boot log isn't lost.
     for (uint32_t start = millis(); !Serial && millis() - start < 3000;) delay(10);
     logBoot();
+    health::begin();
     recovery::begin(); // before anything reads saved settings
     settings::begin();
 
@@ -207,6 +225,7 @@ void setup() {
 }
 
 void loop() {
+    health::loop();
     net::loop();
     recovery::loop();
     handleSerial();

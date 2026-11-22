@@ -1,4 +1,6 @@
 #include "DeviceApi.h"
+#include "core/BuildStamp.h"
+#include "core/Health.h"
 #include "core/Settings.h"
 #include "display/Display.h"
 #include "makapix/Makapix.h"
@@ -11,7 +13,7 @@ namespace api {
 
     namespace {
         WebServer *server;
-        const char *BUILT = __DATE__ " " __TIME__;
+        const char *const BUILT = BUILD_STAMP;
 
         void sendJson(int code, const JsonDocument &doc) {
             String body;
@@ -41,6 +43,7 @@ namespace api {
             doc["firmware"] = "Orbit Station " ORBIT_STATION_VERSION;
             doc["firmwareBuilt"] = BUILT;
             doc["widget"] = "OrbIt"; // the only one; kept for info-orbs clients
+            health::toJson(doc.as<JsonObject>());
             sendJson(200, doc);
         }
 
@@ -88,6 +91,12 @@ namespace api {
         s.on("/api/v1/settings", HTTP_GET, handleGetSettings);
         s.on("/api/v1/settings", HTTP_POST, handlePostSettings);
         // Makapix pairing: state and code; forget erases it (pairs again on next use).
+        // Recent events, oldest first: restarts and why, failures, warnings.
+        s.on("/api/v1/log", HTTP_GET, [] {
+            JsonDocument doc;
+            health::logJson(doc["events"].to<JsonArray>());
+            sendJson(200, doc);
+        });
         s.on("/api/v1/makapix", HTTP_GET, [] {
             JsonDocument doc;
             makapix::statusJson(doc.to<JsonObject>());

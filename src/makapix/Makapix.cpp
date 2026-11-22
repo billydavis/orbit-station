@@ -1,4 +1,5 @@
 #include "Makapix.h"
+#include "core/Health.h"
 #include "display/Display.h"
 #include "net/NetLock.h"
 #include <HTTPClient.h>
@@ -61,9 +62,16 @@ namespace makapix {
         std::vector<uint32_t> viewQueue;
         uint32_t lastView = 0;
 
+        // Signed, because wantedAt can be 1 ms ahead of now: it's stored with
+        // its low bit set so that it's never 0.
+        bool inUse(const ScreenState &s, uint32_t now) {
+            return s.wantedAt && (int32_t) (now - s.wantedAt) < (int32_t) IN_USE_MS;
+        }
+
         bool anyInUse() {
+            const uint32_t now = millis();
             for (const ScreenState &s : screens) {
-                if (s.wantedAt && millis() - s.wantedAt < IN_USE_MS) return true;
+                if (inUse(s, now)) return true;
             }
             return false;
         }
@@ -105,11 +113,11 @@ namespace makapix {
                 if (rc == 200 && rotated["api_token"].is<const char *>()) {
                     apiToken = rotated["api_token"].as<String>();
                     savePairing();
-                    Serial.println("Makapix: token renewed");
+                    health::event("Makapix: token renewed");
                     code = request("POST", String(BASE) + "/player/rpc", body, &reply, true);
                 } else if (rc == 404) {
                     // The player was deleted on makapix.club: pair again.
-                    Serial.println("Makapix: player no longer registered, pairing again");
+                    health::event("Makapix: player no longer registered, pairing again");
                     forgetRequested = true;
                 }
             }
@@ -128,7 +136,7 @@ namespace makapix {
                 if (rc != 200 && rc != 201) {
                     provisionFailedAt = now;
                     pairingProblem = rc == 429 ? "Makapix busy, retrying" : "Can't reach Makapix";
-                    Serial.printf("Makapix: provision failed (HTTP %d)\n", rc);
+                    health::event("Makapix: provisioning failed (HTTP %d)", rc);
                     return;
                 }
                 provisionFailedAt = 0;
@@ -138,7 +146,7 @@ namespace makapix {
                 pairing = Pairing::Pairing;
                 pairingProblem = "";
                 lastPoll = now;
-                Serial.printf("Makapix: register this board at makapix.club with code %s\n", code.c_str());
+                health::event("Makapix: register this board at makapix.club with code %s", code.c_str());
                 return;
             }
             if (now - lastPoll < POLL_PAIRING_MS) return;
@@ -155,7 +163,7 @@ namespace makapix {
             Lock l;
             pairing = Pairing::Paired;
             code = "";
-            Serial.println("Makapix: paired");
+            health::event("Makapix: paired");
         }
 
         // ---- Feeds ----
@@ -185,7 +193,7 @@ namespace makapix {
             const int rc = rpc(req, reply);
             if (rc != 200 || !reply["success"]) {
                 fs.problem = rc == 404 ? "User not found" : reply["error"].is<const char *>() ? reply["error"].as<String>() : "Makapix unavailable";
-                Serial.printf("Makapix: query failed (HTTP %d): %s\n", rc, fs.problem.c_str());
+                health::event("Makapix: query failed (HTTP %d): %s", rc, fs.problem.c_str());
                 return false;
             }
             fs.posts.clear();
@@ -204,7 +212,13 @@ namespace makapix {
         }
 
         // ---- Downloads ----
-        std::shared_ptr<Artwork> fetchArt(const Post &p, String &error) {
+        // True while downloads fail for want of a connection (not a bad file).
+        bool waitingForNetwork = false;
+
+        // offline is set when the download failed for want of a connection (DNS,
+        // connect, timeout), as opposed to a problem with this artwork.
+        std::shared_ptr<Artwork> fetchArt(const Post &p, String &error, bool &offline) {
+            offline = false;
             uint8_t *buf = nullptr;
             int size = 0;
             {
@@ -219,6 +233,7 @@ namespace makapix {
             const int code = http.GET();
             if (code != 200) {
                 http.end();
+                offline = code < 0; // HTTPClient's own errors: no connection at all
                 error = "download failed (HTTP " + String(code) + ")";
                 return nullptr;
             }
@@ -296,7 +311,7 @@ namespace makapix {
                 const uint32_t now = millis();
                 for (int i = 0; i < SCREENS; i++) {
                     ScreenState &s = screens[i];
-                    if (!s.wantedAt || now - s.wantedAt >= IN_USE_MS) {
+                    if (!inUse(s, now)) {
                         s.art.reset(); // let go of art nobody's showing
                         continue;
                     }
@@ -321,10 +336,27 @@ namespace makapix {
             fs.failedAt = 0;
             const Post post = fs.posts[fs.next++];
             String error;
-            auto art = fetchArt(post, error);
+            bool offline;
+            auto art = fetchArt(post, error, offline);
+            if (!art && offline) {
+                // Not this artwork's fault: keep it for later instead of skipping
+                // through the whole queue while the network is down.
+                fs.next--;
+                fs.failedAt = millis();
+                if (!waitingForNetwork) {
+                    health::event("Makapix: can't reach Makapix (%s), retrying every %lus", error.c_str(),
+                                  (unsigned long) (RETRY_MS / 1000));
+                    waitingForNetwork = true;
+                }
+                return true;
+            }
             if (!art) {
-                Serial.printf("Makapix: skipped post %u: %s\n", post.id, error.c_str());
+                health::event("Makapix: skipped post %u: %s", post.id, error.c_str());
                 return true; // the next post will be tried on the next pass
+            }
+            if (waitingForNetwork) {
+                health::event("Makapix: reachable again");
+                waitingForNetwork = false;
             }
             Serial.printf("Makapix: screen %d shows post %u (%dx%d, %u frames) by %s\n", pick, post.id, art->width, art->height,
                           (unsigned) art->frames.size(), post.owner.c_str());
@@ -351,6 +383,7 @@ namespace makapix {
         void task(void *) {
             for (;;) {
                 vTaskDelay(pdMS_TO_TICKS(200));
+                health::beat(health::Task::Makapix);
                 if (forgetRequested) {
                     forgetRequested = false;
                     Preferences p;
@@ -362,7 +395,7 @@ namespace makapix {
                     playerKey = apiToken = code = "";
                     feeds.clear();
                     for (ScreenState &s : screens) s.art.reset();
-                    Serial.println("Makapix: pairing forgotten");
+                    health::event("Makapix: pairing forgotten");
                 }
                 if (WiFi.status() != WL_CONNECTED || !anyInUse()) continue;
                 if (pairing != Pairing::Paired) {

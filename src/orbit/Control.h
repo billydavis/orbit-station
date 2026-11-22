@@ -71,6 +71,10 @@ namespace orbit {
         // true: params are too big for the layout (drawings) and are saved
         // in a file of their own, written only when they change.
         virtual bool savedInFile() const { return false; }
+        // What this screen is showing, as of the last draw. When it changes
+        // from one non-zero value to another, the screen plays the transition
+        // named by params.transition (see Transition.h). 0 = no transitions.
+        virtual uint32_t contentId(int screen) const { return 0; }
     };
 
     // ---- Shared param helpers ----

@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="900" viewBox="0 0 980 900" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<title>Orbit Station breadboard wiring</title>
+<desc>An ESP32-S3 N16R8 board drives five GC9A01 round screens. SCLK, MOSI, DC and RST are shared by all five screens; each screen has its own CS line. The screens are powered from an AMS1117 3.3 V module fed from the board's 5 V pin; the board's own 3V3 pin is not connected.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9z" fill="#E67E22"/></marker></defs>
+<rect width="980" height="900" fill="#FFFFFF"/>
+<text x="40" y="38" font-size="13" fill="#333">5 V USB-C supply (2 A or more) into the board's USB socket: power and data</text>
+<line x1="100" y1="46" x2="100" y2="78" stroke="#E67E22" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="40" y="80" width="250" height="530" rx="10" fill="#E8F4F1" stroke="#1D7A64" stroke-width="1.5"/>
+<text x="56" y="108" font-size="16" font-weight="600" fill="#0E4D3F">ESP32-S3 N16R8</text>
+<text x="56" y="126" font-size="12" fill="#2C6B5C">Lonely Binary, on its screw base</text>
+<text x="282" y="154" font-size="12" fill="#163E35" text-anchor="end">GPIO12 · SCLK</text>
+<text x="282" y="180" font-size="12" fill="#163E35" text-anchor="end">GPIO11 · MOSI</text>
+<text x="282" y="206" font-size="12" fill="#163E35" text-anchor="end">GPIO13 · DC</text>
+<text x="282" y="232" font-size="12" fill="#163E35" text-anchor="end">GPIO14 · RST</text>
+<text x="282" y="280" font-size="12" fill="#163E35" text-anchor="end">GPIO10 · CS 1</text>
+<text x="282" y="306" font-size="12" fill="#163E35" text-anchor="end">GPIO9 · CS 2</text>
+<text x="282" y="332" font-size="12" fill="#163E35" text-anchor="end">GPIO8 · CS 3</text>
+<text x="282" y="358" font-size="12" fill="#163E35" text-anchor="end">GPIO17 · CS 4</text>
+<text x="282" y="384" font-size="12" fill="#163E35" text-anchor="end">GPIO16 · CS 5</text>
+<text x="150" y="600" font-size="12" fill="#163E35" text-anchor="middle">5V</text>
+<text x="215" y="600" font-size="12" fill="#163E35" text-anchor="middle">GND</text>
+<text x="262" y="600" font-size="12" fill="#A33" text-anchor="middle">3V3</text>
+<text x="262" y="626" font-size="11" fill="#A33" text-anchor="middle">not used</text>
+<path d="M290 150H540M540 106V618" stroke="#2563EB" stroke-width="2" fill="none"/>
+<circle cx="540" cy="150" r="3.5" fill="#2563EB"/>
+<text x="540" y="54" font-size="10" font-weight="600" fill="#2563EB" text-anchor="middle">SCL</text>
+<path d="M540 106H720" stroke="#2563EB" stroke-width="1.6" fill="none"/>
+<circle cx="540" cy="106" r="3" fill="#2563EB"/>
+<path d="M540 234H720" stroke="#2563EB" stroke-width="1.6" fill="none"/>
+<circle cx="540" cy="234" r="3" fill="#2563EB"/>
+<path d="M540 362H720" stroke="#2563EB" stroke-width="1.6" fill="none"/>
+<circle cx="540" cy="362" r="3" fill="#2563EB"/>
+<path d="M540 490H720" stroke="#2563EB" stroke-width="1.6" fill="none"/>
+<circle cx="540" cy="490" r="3" fill="#2563EB"/>
+<path d="M540 618H720" stroke="#2563EB" stroke-width="1.6" fill="none"/>
+<circle cx="540" cy="618" r="3" fill="#2563EB"/>
+<path d="M290 176H562M562 120V632" stroke="#9333EA" stroke-width="2" fill="none"/>
+<circle cx="562" cy="176" r="3.5" fill="#9333EA"/>
+<text x="562" y="54" font-size="10" font-weight="600" fill="#9333EA" text-anchor="middle">SDA</text>
+<path d="M562 120H720" stroke="#9333EA" stroke-width="1.6" fill="none"/>
+<circle cx="562" cy="120" r="3" fill="#9333EA"/>
+<path d="M562 248H720" stroke="#9333EA" stroke-width="1.6" fill="none"/>
+<circle cx="562" cy="248" r="3" fill="#9333EA"/>
+<path d="M562 376H720" stroke="#9333EA" stroke-width="1.6" fill="none"/>
+<circle cx="562" cy="376" r="3" fill="#9333EA"/>
+<path d="M562 504H720" stroke="#9333EA" stroke-width="1.6" fill="none"/>
+<circle cx="562" cy="504" r="3" fill="#9333EA"/>
+<path d="M562 632H720" stroke="#9333EA" stroke-width="1.6" fill="none"/>
+<circle cx="562" cy="632" r="3" fill="#9333EA"/>
+<path d="M290 202H584M584 134V646" stroke="#0891B2" stroke-width="2" fill="none"/>
+<circle cx="584" cy="202" r="3.5" fill="#0891B2"/>
+<text x="584" y="54" font-size="10" font-weight="600" fill="#0891B2" text-anchor="middle">DC</text>
+<path d="M584 134H720" stroke="#0891B2" stroke-width="1.6" fill="none"/>
+<circle cx="584" cy="134" r="3" fill="#0891B2"/>
+<path d="M584 262H720" stroke="#0891B2" stroke-width="1.6" fill="none"/>
+<circle cx="584" cy="262" r="3" fill="#0891B2"/>
+<path d="M584 390H720" stroke="#0891B2" stroke-width="1.6" fill="none"/>
+<circle cx="584" cy="390" r="3" fill="#0891B2"/>
+<path d="M584 518H720" stroke="#0891B2" stroke-width="1.6" fill="none"/>
+<circle cx="584" cy="518" r="3" fill="#0891B2"/>
+<path d="M584 646H720" stroke="#0891B2" stroke-width="1.6" fill="none"/>
+<circle cx="584" cy="646" r="3" fill="#0891B2"/>
+<path d="M290 228H606M606 162V674" stroke="#8B5E34" stroke-width="2" fill="none"/>
+<circle cx="606" cy="228" r="3.5" fill="#8B5E34"/>
+<text x="606" y="54" font-size="10" font-weight="600" fill="#8B5E34" text-anchor="middle">RST</text>
+<path d="M606 162H720" stroke="#8B5E34" stroke-width="1.6" fill="none"/>
+<circle cx="606" cy="162" r="3" fill="#8B5E34"/>
+<path d="M606 290H720" stroke="#8B5E34" stroke-width="1.6" fill="none"/>
+<circle cx="606" cy="290" r="3" fill="#8B5E34"/>
+<path d="M606 418H720" stroke="#8B5E34" stroke-width="1.6" fill="none"/>
+<circle cx="606" cy="418" r="3" fill="#8B5E34"/>
+<path d="M606 546H720" stroke="#8B5E34" stroke-width="1.6" fill="none"/>
+<circle cx="606" cy="546" r="3" fill="#8B5E34"/>
+<path d="M606 674H720" stroke="#8B5E34" stroke-width="1.6" fill="none"/>
+<circle cx="606" cy="674" r="3" fill="#8B5E34"/>
+<path d="M290 276H410V148H720" stroke="#2E9E3E" stroke-width="2" fill="none"/>
+<path d="M290 302H432V276H720" stroke="#2E9E3E" stroke-width="2" fill="none"/>
+<path d="M290 328H454V404H720" stroke="#2E9E3E" stroke-width="2" fill="none"/>
+<path d="M290 354H476V532H720" stroke="#2E9E3E" stroke-width="2" fill="none"/>
+<path d="M290 380H498V660H720" stroke="#2E9E3E" stroke-width="2" fill="none"/>
+<path d="M640 78V790" stroke="#D0312D" stroke-width="2.5" fill="none"/>
+<path d="M662 92V815" stroke="#222222" stroke-width="2.5" fill="none"/>
+<path d="M640 78H720" stroke="#D0312D" stroke-width="1.6" fill="none"/>
+<circle cx="640" cy="78" r="3" fill="#D0312D"/>
+<path d="M662 92H720" stroke="#222222" stroke-width="1.6" fill="none"/>
+<circle cx="662" cy="92" r="3" fill="#222222"/>
+<path d="M640 206H720" stroke="#D0312D" stroke-width="1.6" fill="none"/>
+<circle cx="640" cy="206" r="3" fill="#D0312D"/>
+<path d="M662 220H720" stroke="#222222" stroke-width="1.6" fill="none"/>
+<circle cx="662" cy="220" r="3" fill="#222222"/>
+<path d="M640 334H720" stroke="#D0312D" stroke-width="1.6" fill="none"/>
+<circle cx="640" cy="334" r="3" fill="#D0312D"/>
+<path d="M662 348H720" stroke="#222222" stroke-width="1.6" fill="none"/>
+<circle cx="662" cy="348" r="3" fill="#222222"/>
+<path d="M640 462H720" stroke="#D0312D" stroke-width="1.6" fill="none"/>
+<circle cx="640" cy="462" r="3" fill="#D0312D"/>
+<path d="M662 476H720" stroke="#222222" stroke-width="1.6" fill="none"/>
+<circle cx="662" cy="476" r="3" fill="#222222"/>
+<path d="M640 590H720" stroke="#D0312D" stroke-width="1.6" fill="none"/>
+<circle cx="640" cy="590" r="3" fill="#D0312D"/>
+<path d="M662 604H720" stroke="#222222" stroke-width="1.6" fill="none"/>
+<circle cx="662" cy="604" r="3" fill="#222222"/>
+<text x="640" y="54" font-size="11" fill="#D0312D" text-anchor="middle">3.3 V</text>
+<text x="670" y="54" font-size="11" fill="#222222" text-anchor="start">GND</text>
+<rect x="720" y="60" width="220" height="116" rx="10" fill="#F1EFFA" stroke="#5A4FB0" stroke-width="1.5"/>
+<text x="728" y="82" font-size="11" fill="#333">VCC</text>
+<text x="728" y="96" font-size="11" fill="#333">GND</text>
+<text x="728" y="110" font-size="11" fill="#333">SCL</text>
+<text x="728" y="124" font-size="11" fill="#333">SDA</text>
+<text x="728" y="138" font-size="11" fill="#333">DC</text>
+<text x="728" y="152" font-size="11" fill="#333">CS</text>
+<text x="728" y="166" font-size="11" fill="#333">RST</text>
+<text x="860" y="114" font-size="15" font-weight="600" fill="#3C3489" text-anchor="middle">Screen 1</text>
+<text x="860" y="132" font-size="11" fill="#534AB7" text-anchor="middle">GC9A01 1.28" 240×240</text>
+<rect x="720" y="188" width="220" height="116" rx="10" fill="#F1EFFA" stroke="#5A4FB0" stroke-width="1.5"/>
+<text x="728" y="210" font-size="11" fill="#333">VCC</text>
+<text x="728" y="224" font-size="11" fill="#333">GND</text>
+<text x="728" y="238" font-size="11" fill="#333">SCL</text>
+<text x="728" y="252" font-size="11" fill="#333">SDA</text>
+<text x="728" y="266" font-size="11" fill="#333">DC</text>
+<text x="728" y="280" font-size="11" fill="#333">CS</text>
+<text x="728" y="294" font-size="11" fill="#333">RST</text>
+<text x="860" y="242" font-size="15" font-weight="600" fill="#3C3489" text-anchor="middle">Screen 2</text>
+<text x="860" y="260" font-size="11" fill="#534AB7" text-anchor="middle">GC9A01 1.28" 240×240</text>
+<rect x="720" y="316" width="220" height="116" rx="10" fill="#F1EFFA" stroke="#5A4FB0" stroke-width="1.5"/>
+<text x="728" y="338" font-size="11" fill="#333">VCC</text>
+<text x="728" y="352" font-size="11" fill="#333">GND</text>
+<text x="728" y="366" font-size="11" fill="#333">SCL</text>
+<text x="728" y="380" font-size="11" fill="#333">SDA</text>
+<text x="728" y="394" font-size="11" fill="#333">DC</text>
+<text x="728" y="408" font-size="11" fill="#333">CS</text>
+<text x="728" y="422" font-size="11" fill="#333">RST</text>
+<text x="860" y="370" font-size="15" font-weight="600" fill="#3C3489" text-anchor="middle">Screen 3</text>
+<text x="860" y="388" font-size="11" fill="#534AB7" text-anchor="middle">GC9A01 1.28" 240×240</text>
+<rect x="720" y="444" width="220" height="116" rx="10" fill="#F1EFFA" stroke="#5A4FB0" stroke-width="1.5"/>
+<text x="728" y="466" font-size="11" fill="#333">VCC</text>
+<text x="728" y="480" font-size="11" fill="#333">GND</text>
+<text x="728" y="494" font-size="11" fill="#333">SCL</text>
+<text x="728" y="508" font-size="11" fill="#333">SDA</text>
+<text x="728" y="522" font-size="11" fill="#333">DC</text>
+<text x="728" y="536" font-size="11" fill="#333">CS</text>
+<text x="728" y="550" font-size="11" fill="#333">RST</text>
+<text x="860" y="498" font-size="15" font-weight="600" fill="#3C3489" text-anchor="middle">Screen 4</text>
+<text x="860" y="516" font-size="11" fill="#534AB7" text-anchor="middle">GC9A01 1.28" 240×240</text>
+<rect x="720" y="572" width="220" height="116" rx="10" fill="#F1EFFA" stroke="#5A4FB0" stroke-width="1.5"/>
+<text x="728" y="594" font-size="11" fill="#333">VCC</text>
+<text x="728" y="608" font-size="11" fill="#333">GND</text>
+<text x="728" y="622" font-size="11" fill="#333">SCL</text>
+<text x="728" y="636" font-size="11" fill="#333">SDA</text>
+<text x="728" y="650" font-size="11" fill="#333">DC</text>
+<text x="728" y="664" font-size="11" fill="#333">CS</text>
+<text x="728" y="678" font-size="11" fill="#333">RST</text>
+<text x="860" y="626" font-size="15" font-weight="600" fill="#3C3489" text-anchor="middle">Screen 5</text>
+<text x="860" y="644" font-size="11" fill="#534AB7" text-anchor="middle">GC9A01 1.28" 240×240</text>
+<rect x="300" y="720" width="120" height="62" rx="6" fill="#FFF4E0" stroke="#B9770E" stroke-width="1.5"/>
+<text x="360.0" y="742" font-size="13" font-weight="600" fill="#7A4A05" text-anchor="middle">AMS1117-3.3</text>
+<text x="322" y="772" font-size="11" fill="#7A4A05" text-anchor="middle">VIN</text>
+<text x="360" y="772" font-size="11" fill="#7A4A05" text-anchor="middle">OUT</text>
+<text x="398" y="772" font-size="11" fill="#7A4A05" text-anchor="middle">GND</text>
+<path d="M150 610V860H322V782" stroke="#E67E22" stroke-width="2.5" fill="none"/>
+<text x="158" y="852" font-size="11" fill="#B35400">5 V</text>
+<path d="M360 782V790H640" stroke="#D0312D" stroke-width="2.5" fill="none"/>
+<circle cx="640" cy="790" r="3.5" fill="#D0312D"/>
+<path d="M398 782V815" stroke="#222222" stroke-width="2.5" fill="none"/>
+<path d="M215 610V815H662" stroke="#222222" stroke-width="2.5" fill="none"/>
+<circle cx="398" cy="815" r="3.5" fill="#222222"/>
+<circle cx="662" cy="815" r="3.5" fill="#222222"/>
+<g stroke="#555" stroke-width="2"><path d="M640 760H648"/><path d="M648 752V768"/><path d="M654 752V768"/><path d="M654 760H662"/></g>
+<text x="670" y="764" font-size="11" fill="#555">10 µF</text>
+<text x="720" y="740" font-size="12" font-weight="600" fill="#333">Key</text>
+<line x1="720" y1="756" x2="744" y2="756" stroke="#E67E22" stroke-width="2.5"/>
+<text x="750" y="760" font-size="12" fill="#333">5 V</text>
+<line x1="806" y1="756" x2="830" y2="756" stroke="#D0312D" stroke-width="2.5"/>
+<text x="836" y="760" font-size="12" fill="#333">3.3 V</text>
+<line x1="892" y1="756" x2="916" y2="756" stroke="#222222" stroke-width="2.5"/>
+<text x="922" y="760" font-size="12" fill="#333">GND</text>
+<line x1="720" y1="776" x2="744" y2="776" stroke="#2563EB" stroke-width="2.5"/>
+<text x="750" y="780" font-size="12" fill="#333">SCL</text>
+<line x1="784" y1="776" x2="808" y2="776" stroke="#9333EA" stroke-width="2.5"/>
+<text x="814" y="780" font-size="12" fill="#333">SDA</text>
+<line x1="848" y1="776" x2="872" y2="776" stroke="#0891B2" stroke-width="2.5"/>
+<text x="878" y="780" font-size="12" fill="#333">DC</text>
+<line x1="912" y1="776" x2="936" y2="776" stroke="#8B5E34" stroke-width="2.5"/>
+<text x="942" y="780" font-size="12" fill="#333">RST</text>
+<line x1="720" y1="796" x2="744" y2="796" stroke="#2E9E3E" stroke-width="2.5"/>
+<text x="750" y="800" font-size="12" fill="#333">CS (one per screen)</text>
+<circle cx="732" cy="816" r="3.5" fill="#333"/>
+<text x="750" y="820" font-size="12" fill="#333">joined; a crossing without a dot isn't</text>
+<text x="720" y="842" font-size="12" fill="#333">100 nF across VCC–GND at each screen plug</text>
+<text x="720" y="860" font-size="12" fill="#333">Cable colours vary: wire by the labels</text>
+<text x="720" y="878" font-size="12" fill="#333">SPI at 40 MHz; screen cables up to 20 cm</text>
+</svg>

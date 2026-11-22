@@ -19,6 +19,8 @@ namespace orbit {
     //   fit            crisp (default): largest whole multiple, centred on black
     //                  fill: covers the whole screen; long edges are trimmed and
     //                  pixels may be slightly uneven
+    //   transition     how one artwork changes to the next: random (default),
+    //                  none, or one of transition::CHOICES
     //
     // The first makapix screen pairs the board with makapix.club: it shows a
     // code to register there (see makapix/Makapix.h).
@@ -28,9 +30,11 @@ namespace orbit {
         int parse(JsonObjectConst params, JsonObject out, String &error) const override;
         void draw(LGFX_Sprite &spr, JsonObjectConst params, const DrawContext &ctx) override;
         uint32_t refreshMs(int screen, JsonObjectConst params) const override;
+        uint32_t contentId(int screen) const override { return postIds[screen]; }
 
     private:
         uint32_t frameMs[5] = {500, 500, 500, 500, 500}; // per screen, from the art showing
+        uint32_t postIds[5] = {};                        // the artwork showing, 0 for none
     };
 
 }

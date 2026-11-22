@@ -26,11 +26,19 @@ namespace display {
     LGFX_Sprite &beginFrame(int screen);
     // Hands the picture from beginFrame() to the sender.
     void endFrame(int screen);
+    // The picture handed over last, which is what the screen shows or is about
+    // to. Only for the task drawing this screen, between beginFrame() and
+    // endFrame(); nullptr if there isn't one yet.
+    const uint16_t *lastFrame(int screen);
 
     // Re-initialises one screen through its own CS line (others keep running),
     // or all of them through the shared RST wire when screen is -1. Use after
     // plugging a screen back in.
     void requestReinit(int screen);
+
+    // Screens whose whole picture must be drawn and sent again (after a
+    // re-init or the periodic refresh). Clears the requests it returns.
+    uint32_t takeFrameRequests();
 
     void setInverted(int screen, bool on);
     bool inverted(int screen);

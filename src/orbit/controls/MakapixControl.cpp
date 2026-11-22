@@ -1,5 +1,6 @@
 #include "MakapixControl.h"
 #include "makapix/Makapix.h"
+#include "orbit/Transition.h"
 #include "ui/Text.h"
 
 namespace orbit {
@@ -69,6 +70,7 @@ namespace orbit {
             error = "unknown makapix fit '" + in["fit"].as<String>() + "' (crisp or fill)";
             return status;
         }
+        if ((status = optionalChoice(in, out, "transition", transition::CHOICES, error))) return status;
         const String channel = out["channel"].as<String>();
         if (channel == "by_user" || channel == "reactions") {
             if (!in["user"].is<const char *>() || strlen(in["user"]) == 0) {
@@ -105,6 +107,7 @@ namespace orbit {
         feed.sort = p["sort"].as<String>();
         feed.changeMs = p["changeSeconds"].as<uint32_t>() * 1000UL;
         const makapix::Showing s = makapix::show(ctx.screen, feed);
+        postIds[ctx.screen] = s.art ? s.art->postId : 0;
 
         spr.fillScreen(TFT_BLACK);
         if (s.art) {

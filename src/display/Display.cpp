@@ -1,5 +1,6 @@
 #include "Display.h"
 #include "Lgfx.h"
+#include "core/Health.h"
 #include <atomic>
 #include <esp_heap_caps.h>
 
@@ -14,6 +15,7 @@ namespace display {
         struct Screen {
             LGFX_Sprite pictures[2];
             int drawing = -1;        // picture taken by beginFrame()
+            int latest = -1;         // picture handed over last
             // Fingerprint of each tile the screen shows. Comparing these instead
             // of a full copy of the screen halves the PSRAM reads per frame.
             uint32_t tileHash[HEIGHT / TILE][WIDTH / TILE];
@@ -37,6 +39,7 @@ namespace display {
         std::atomic<uint32_t> reinitMask{0}; // bit per screen
         std::atomic<bool> reinitAllPending{false};
         std::atomic<uint32_t> invertMask{0}; // bit per screen whose invert changed
+        std::atomic<uint32_t> frameWanted{0}; // screens whose whole picture must be sent again
 
         // Two small buffers in internal RAM. Frames are copied out of PSRAM into
         // these and sent by DMA from here: sending straight from PSRAM while the
@@ -85,6 +88,7 @@ namespace display {
                 applySettings(s);
                 screens[s].needWhole = true;
             }
+            frameWanted |= (1u << NUM_SCREENS) - 1;
         }
 
         void reinitScreen(int s) {
@@ -93,19 +97,41 @@ namespace display {
             deselectAll();
             applySettings(s);
             screens[s].needWhole = true;
+            frameWanted |= 1u << s;
+        }
+
+        // Every REFRESH_MS, one screen (in turn) gets its setup re-sent quietly
+        // and a whole new frame, so one that was unplugged and plugged back in
+        // recovers by itself within NUM_SCREENS * REFRESH_MS.
+        constexpr uint32_t REFRESH_MS = 30000;
+        uint32_t lastRefresh = 0;
+        int nextRefresh = 0;
+
+        void refreshQuietly(int s) {
+            selectScreen(s);
+            lcd.panel().refreshQuietly();
+            deselectAll();
+            applySettings(s);
+            screens[s].needWhole = true;
+            frameWanted |= 1u << s;
         }
 
         void handleRequests() {
+            if (millis() - lastRefresh >= REFRESH_MS) {
+                lastRefresh = millis();
+                refreshQuietly(nextRefresh);
+                nextRefresh = (nextRefresh + 1) % NUM_SCREENS;
+            }
             if (reinitAllPending.exchange(false)) {
                 reinitMask = 0;
                 reinitAll();
-                Serial.println("Display: re-initialised all screens");
+                health::event("Display: re-initialised all screens");
             }
             uint32_t mask = reinitMask.exchange(0);
             for (int s = 0; s < NUM_SCREENS; s++) {
                 if (mask & (1u << s)) {
                     reinitScreen(s);
-                    Serial.printf("Display: re-initialised screen %d\n", s + 1);
+                    health::event("Display: re-initialised screen %d", s + 1);
                 }
             }
             mask = invertMask.exchange(0);
@@ -203,6 +229,7 @@ namespace display {
         void senderTask(void *) {
             uint32_t lastYield = millis();
             for (;;) {
+                health::beat(health::Task::Display);
                 // While frames keep coming this task never waits on the queue, so
                 // let lower-priority tasks on this core (and its idle task) run.
                 if (millis() - lastYield >= 100) {
@@ -274,8 +301,15 @@ namespace display {
         Screen &sc = screens[screen];
         if (sc.drawing < 0) return;
         Job job = {(uint8_t) screen, (uint8_t) sc.drawing};
+        sc.latest = sc.drawing;
         sc.drawing = -1;
         xQueueSend(ready, &job, portMAX_DELAY);
+    }
+
+    const uint16_t *lastFrame(int screen) {
+        const Screen &sc = screens[screen];
+        if (sc.latest < 0 || sc.latest == sc.drawing) return nullptr;
+        return (const uint16_t *) sc.pictures[sc.latest].getBuffer();
     }
 
     void requestReinit(int screen) {
@@ -285,6 +319,8 @@ namespace display {
             reinitMask |= 1u << screen;
         }
     }
+
+    uint32_t takeFrameRequests() { return frameWanted.exchange(0); }
 
     void setInverted(int screen, bool on) {
         if (screen < 0 || screen >= NUM_SCREENS) return;
