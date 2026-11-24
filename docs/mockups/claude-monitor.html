@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude usage control mockups</title>
+<style>
+@font-face{font-family:OrbitRoboto;src:url(../../fonts/RobotoRegular.ttf)}
+:root{color-scheme:dark;--bg:#141311;--panel:#1e1c19;--line:#35312b;--text:#f0eee6;--muted:#aaa397;--accent:#d97757}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 OrbitRoboto,system-ui,sans-serif}
+main{max-width:1320px;margin:auto;padding:28px 24px 48px}
+h1{font-size:26px;font-weight:400;margin:0 0 4px}
+.lede{color:var(--muted);margin:0 0 20px;max-width:70ch}
+.controls{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:22px;position:sticky;top:8px;z-index:2}
+.states{display:flex;flex-wrap:wrap;gap:6px}
+button{font:inherit;color:var(--text);background:#2a2722;border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer}
+button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#1b1410}
+button:focus-visible,input:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+label{display:flex;gap:8px;align-items:center;color:var(--muted)}
+label output{color:var(--text);min-width:4ch}
+input[type=range]{accent-color:var(--accent);width:130px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:16px}
+article{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;align-items:center}
+.screen{width:252px;height:252px;padding:6px;border-radius:50%;background:#050505;box-shadow:0 0 0 2px #38342e,0 8px 22px #0008}
+canvas{display:block;width:240px;height:240px;border-radius:50%;image-rendering:pixelated}
+h2{align-self:stretch;font-size:18px;font-weight:400;margin:16px 0 2px}
+article p{align-self:stretch;color:var(--muted);margin:0 0 10px;min-height:4.4em}
+.cost{align-self:stretch;margin-top:auto;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<main>
+<h1>Claude usage control</h1>
+<p class="lede">Five concepts at the real 240×240 size, in RGB565 with the firmware's Roboto. Try each state. The figure under each screen is measured from its animation using the display core's 16×16 tiles.</p>
+<section class="controls" aria-label="Preview controls">
+  <div class="states" id="states"></div>
+  <label>Session <input id="s" type="range" min="0" max="100"><output id="so"></output></label>
+  <label>Week <input id="w" type="range" min="0" max="100"><output id="wo"></output></label>
+  <button id="motion" aria-pressed="true">Animation</button>
+</section>
+<section class="grid" id="grid"></section>
+</main>
+<script>
+const ORANGE='#d97757',SAND='#eadfca',AMBER='#f4b740',RED='#f0524f',GREY='#77736c',TRACK='#2b2824',WHITE='#f7f4ec',MUTED='#aaa397';
+const PRESETS={
+  Steady:{s:42,w:31,sr:134,wr:4680,active:false,stale:false},
+  Working:{s:68,w:47,sr:88,wr:3900,active:true,stale:false},
+  'Near limit':{s:92,w:78,sr:41,wr:1520,active:true,stale:false},
+  Limited:{s:100,w:86,sr:38,wr:1440,active:false,stale:false},
+  'No data':{s:42,w:31,sr:134,wr:4680,active:false,stale:true}
+};
+let target={...PRESETS.Working},cur={s:target.s,w:target.w},motion=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+const RAYS=[1,.78,.93,.72,.98,.8,.9,.7,1,.76,.94,.82];
+const rad=d=>(d-90)*Math.PI/180;
+const dur=m=>m>=1440?`${Math.floor(m/1440)}d ${Math.floor(m%1440/60)}h`:m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;
+const tone=(v,base)=>target.stale?GREY:v>=99.5?RED:v>=85?AMBER:base;
+const pct=v=>`${Math.round(v)}%`;
+function text(c,s,x,y,size,color,align='center'){c.font=`${size}px OrbitRoboto`;c.fillStyle=color;c.textAlign=align;c.textBaseline='middle';c.fillText(s,x,y)}
+function arc(c,x,y,r,w,a,b,color,round=true){if(b<=a)return;c.beginPath();c.arc(x,y,r,rad(a),rad(b));c.lineWidth=w;c.lineCap=round?'round':'butt';c.strokeStyle=color;c.stroke()}
+function ray(c,x,y,a,r0,r1,w0,w1,color){const d=rad(a),ux=Math.cos(d),uy=Math.sin(d),px=-uy,py=ux;c.beginPath();c.moveTo(x+ux*r0+px*w0,y+uy*r0+py*w0);c.lineTo(x+ux*r1+px*w1,y+uy*r1+py*w1);c.arc(x+ux*r1,y+uy*r1,w1,d+Math.PI/2,d-Math.PI/2,true);c.lineTo(x+ux*r0-px*w0,y+uy*r0-py*w0);c.closePath();c.fillStyle=color;c.fill()}
+function spark(c,x,y,r,color,t,spin=0){RAYS.forEach((l,i)=>{const b=target.active&&motion?1+.08*Math.sin(t*3.2+i*1.7):1;ray(c,x,y,i*30+7+spin,r*.08,r*l*b,r*.105,r*.045,color)})}
+const logoColor=()=>target.stale?GREY:ORANGE;
+const sessionNote=()=>target.stale?'no update 6m':`resets ${dur(target.sr)}`;
+const weekNote=()=>target.stale?'':`resets ${dur(target.wr)}`;
+
+const CONCEPTS=[
+{name:'Orbit',note:'Two usage orbits with moving planets. Both numbers stay side by side at equal size, under a large logo.',draw(c,t){
+  const sc=tone(cur.s,ORANGE),wc=tone(cur.w,SAND);
+  [[112,cur.w,wc],[99,cur.s,sc]].forEach(([r,v,col],i)=>{arc(c,120,120,r,3,0,360,TRACK,false);const e=v*3.6;arc(c,120,120,r,5,0,e,col);const pulse=target.active&&motion?1+.22*Math.sin(t*4+i*2):1,d=rad(e);c.beginPath();c.arc(120+Math.cos(d)*r,120+Math.sin(d)*r,6*pulse,0,7);c.fillStyle=WHITE;c.fill();c.beginPath();c.arc(120+Math.cos(d)*r,120+Math.sin(d)*r,3.2,0,7);c.fillStyle=col;c.fill()});
+  spark(c,120,76,27,logoColor(),t,target.active&&motion?t*14:0);
+  text(c,pct(cur.s),78,132,34,sc);text(c,pct(cur.w),162,132,34,wc);
+  text(c,'SESSION',78,158,11,WHITE);text(c,'WEEK',162,158,11,WHITE);
+  text(c,target.stale?'no update':dur(target.sr),78,175,12,MUTED);text(c,target.stale?'6m':dur(target.wr),162,175,12,MUTED);
+}},
+{name:'Spark Gauge',note:'The logo is the session gauge: its rays light up as you use the session. Week sits below as a simple bar.',draw(c,t){
+  const sc=tone(cur.s,ORANGE),wc=tone(cur.w,SAND),x=120,y=98,lit=cur.s/100*12;
+  RAYS.forEach((l,i)=>{const a=i*30,r1=45+33*l,amt=Math.max(0,Math.min(1,lit-i));ray(c,x,y,a,37,r1,6.5,3,TRACK);if(amt>0){const wave=target.active&&motion?.82+.18*Math.sin(t*5-i*.75):1;c.globalAlpha=wave;ray(c,x,y,a,37,37+(r1-37)*amt,6.5,3,sc);c.globalAlpha=1}});
+  text(c,pct(cur.s),x,y-3,27,WHITE);text(c,'SESSION',x,y+17,9,MUTED);
+  text(c,'WEEK',62,190,12,WHITE,'left');text(c,pct(cur.w),178,189,20,wc,'right');
+  c.fillStyle=TRACK;c.fillRect(62,203,116,6);c.fillStyle=wc;c.fillRect(62,203,116*cur.w/100,6);
+  text(c,target.stale?'no update 6m':`session ${dur(target.sr)}`,120,222,11,MUTED);
+}},
+{name:'Twin Tanks',note:'Session and week fill like two liquid tanks around the logo. Readable from across the room, with gentle surface motion.',draw(c,t){
+  const tank=(left,v,col,fill,phase)=>{c.save();c.beginPath();c.arc(120,120,119,0,7);c.clip();c.beginPath();c.rect(left?0:122,0,118,240);c.clip();const base=236-v*2.32;c.beginPath();c.moveTo(left?0:122,240);for(let x=left?0:122;x<=(left?118:240);x+=4)c.lineTo(x,base+(target.active&&motion&&v<100?2.6*Math.sin(x*.075+t*2.4+phase):0));c.lineTo(left?118:240,240);c.closePath();c.fillStyle=fill;c.fill();c.lineWidth=2;c.strokeStyle=col;c.stroke();c.restore()};
+  const sc=tone(cur.s,ORANGE),wc=tone(cur.w,SAND);
+  tank(true,cur.s,sc,target.stale?'#282725':cur.s>=99.5?'#5d2020':cur.s>=85?'#5d4518':'#5c3024',0);tank(false,cur.w,wc,target.stale?'#282725':cur.w>=99.5?'#5d2020':cur.w>=85?'#5d4518':'#4b463c',2);
+  c.beginPath();c.arc(120,54,25,0,7);c.fillStyle='#000';c.fill();spark(c,120,54,20,logoColor(),t);
+  text(c,pct(cur.s),62,122,34,WHITE);text(c,pct(cur.w),178,122,34,WHITE);
+  text(c,'SESSION',62,149,11,WHITE);text(c,'WEEK',178,149,11,WHITE);
+  text(c,target.stale?'no update':dur(target.sr),62,167,12,WHITE);text(c,target.stale?'6m':dur(target.wr),178,167,12,WHITE);
+}},
+{name:'Pace',note:'The most informative. The white tick marks how far through each window you are, so you can tell if you will run out.',draw(c,t){
+  spark(c,83,43,16,logoColor(),t);text(c,'Claude',105,44,23,WHITE,'left');
+  const row=(y,name,v,col,elapsed,note)=>{text(c,name,28,y,12,WHITE,'left');text(c,pct(v),212,y-2,27,col,'right');c.fillStyle=TRACK;c.fillRect(28,y+18,184,8);c.fillStyle=col;c.fillRect(28,y+18,184*v/100,8);if(!target.stale){const px=28+184*elapsed;c.fillStyle=WHITE;c.fillRect(px-1,y+14,2,16)}text(c,note,28,y+39,11,MUTED,'left')};
+  const se=1-target.sr/300,we=1-target.wr/10080;
+  row(83,'SESSION',cur.s,tone(cur.s,ORANGE),se,sessionNote());row(143,'WEEK',cur.w,tone(cur.w,SAND),we,target.stale?'':weekNote());
+  const diff=Math.round(cur.w-we*100),msg=target.stale?'Waiting for data':cur.s>=99.5?'Session limit reached':diff>8?`Week ${diff}% ahead of pace`:diff<-8?`${-diff}% under weekly pace`:'On pace this week',col=target.stale?GREY:cur.s>=99.5?RED:diff>8?AMBER:'#83c98f';
+  if(target.active&&motion){c.globalAlpha=.65+.35*Math.sin(t*3)}text(c,msg,120,209,12,col);c.globalAlpha=1;
+}},
+{name:'Focus Dial',note:'One big ring and number that alternates between session and week, with a built-in slide between them.',state:{},draw(c,t){
+  const cycle=motion?(t%8)/8:0,isS=cycle<.5,edge=cycle<.5?cycle*2:(cycle-.5)*2,fade=motion?Math.min(1,Math.min(edge,1-edge)*14):1,v=isS?cur.s:cur.w,col=tone(v,isS?ORANGE:SAND);
+  arc(c,120,120,106,13,-135,135,TRACK);arc(c,120,120,106,13,-135,-135+v*2.7,col);
+  spark(c,120,63,19,logoColor(),t);
+  c.globalAlpha=fade;text(c,pct(v),120,123,58,WHITE);text(c,isS?'SESSION':'THIS WEEK',120,160,13,col);text(c,target.stale?'no update 6m':`resets ${dur(isS?target.sr:target.wr)}`,120,179,12,MUTED);c.globalAlpha=1;
+  c.beginPath();c.arc(112,205,3.5,0,7);c.fillStyle=isS?WHITE:GREY;c.fill();c.beginPath();c.arc(128,205,3.5,0,7);c.fillStyle=isS?GREY:WHITE;c.fill();
+}}];
+
+const grid=document.getElementById('grid');
+const cards=CONCEPTS.map(k=>{const a=document.createElement('article');a.innerHTML=`<div class="screen"><canvas width="240" height="240" role="img" aria-label="${k.name} concept"></canvas></div><h2>${k.name}</h2><p>${k.note}</p><div class="cost">Measuring…</div>`;grid.append(a);const cv=a.querySelector('canvas');return {k,c:cv.getContext('2d',{willReadFrequently:true}),cost:a.querySelector('.cost'),prev:null,avg:0,n:0}});
+function render(card,t){const {c,k}=card;c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.fillStyle='#000';c.fillRect(0,0,240,240);k.draw(c,t);const img=c.getImageData(0,0,240,240),d=img.data,now=new Uint16Array(57600);for(let i=0,p=0;i<d.length;i+=4,p++){const r=d[i]&248,g=d[i+1]&252,b=d[i+2]&248;d[i]=r|r>>5;d[i+1]=g|g>>6;d[i+2]=b|b>>5;now[p]=r<<8|g<<3|b>>3}c.putImageData(img,0,0);if(card.prev){let changed=0;for(let ty=0;ty<15;ty++)for(let tx=0;tx<15;tx++){let hit=false;for(let y=ty*16;y<ty*16+16&&!hit;y++)for(let x=tx*16;x<tx*16+16;x++)if(now[y*240+x]!==card.prev[y*240+x]){hit=true;break}if(hit)changed++}card.avg=card.n?card.avg*.94+changed*.06:changed;card.n++;}card.prev=now}
+function syncUI(){s.value=target.s;w.value=target.w;so.textContent=target.s+'%';wo.textContent=target.w+'%'}
+const states=document.getElementById('states');let activeName='Working';
+const btns=Object.keys(PRESETS).map(name=>{const b=document.createElement('button');b.textContent=name;b.onclick=()=>{activeName=name;target={...PRESETS[name]};resetCost();syncUI();mark()};states.append(b);return [name,b]});
+function mark(){btns.forEach(([n,b])=>b.setAttribute('aria-pressed',n===activeName));motionBtn.setAttribute('aria-pressed',motion)}
+function resetCost(){cards.forEach(x=>{x.avg=0;x.n=0})}
+const motionBtn=document.getElementById('motion');motionBtn.onclick=()=>{motion=!motion;resetCost();mark()};
+s.oninput=()=>{target.s=+s.value;so.textContent=s.value+'%'};w.oninput=()=>{target.w=+w.value;wo.textContent=w.value+'%'};
+let last=0,lastCost=0;
+function frame(ms){requestAnimationFrame(frame);if(ms-last<66)return;last=ms;cur.s+=(target.s-cur.s)*.22;cur.w+=(target.w-cur.w)*.22;if(Math.abs(target.s-cur.s)<.05)cur.s=target.s;if(Math.abs(target.w-cur.w)<.05)cur.w=target.w;cards.forEach(x=>render(x,ms/1000));if(ms-lastCost>500){lastCost=ms;cards.forEach(x=>{const kb=x.avg*512*15/1024;x.cost.textContent=`${x.avg.toFixed(0)} of 225 tiles per frame · ${kb.toFixed(0)} KB/s at 15 fps`})}}
+document.fonts.load('20px OrbitRoboto').finally(()=>{syncUI();mark();requestAnimationFrame(frame)});
+</script>
+</body>
+</html>

@@ -252,6 +252,40 @@ Still open:
   "Loading art" before their time. Fixed; in a 5-minute check every change
   waited its full interval.
 
+### Claude usage control
+
+Designs: `docs/mockups/claude-monitor.html`. Three styles were picked: pace,
+orbit and twin tanks.
+
+1. **Shared core and `pace`** (done, checked on the screens):
+   `claudeUsage` with `style` and `animate` saved; `session`, `week`,
+   `sessionResetsAt` and `weekResetsAt` live only. The board counts down to
+   each reset with its own clock, and shows a window as 0% once its reset has
+   passed. The logo animates for 3 minutes after a reading changes.
+   Lesson: text drawn with OpenFontRender costs 5-15 ms a string, so a frame
+   with all its text took ~110 ms and starved the other screens at 15 fps.
+   Everything but the moving parts now goes in a cached PSRAM layer per
+   screen (115 KB), repainted only when its text or bars change: a frame is
+   ~10 ms, 12-14 fps while animating, and the other screens keep their rate.
+2. **`orbit`** (done, checked on the screens): rings and text in the cached
+   layer; the planets and the spinning logo drawn each frame. 10-12 ms a
+   frame. Value-only updates don't save to NVS. The rings are drawn
+   anti-aliased pixel by pixel (fillArc's edges were jagged); that costs a
+   few ms, but only when the layer is repainted.
+3. **`tanks`** (done, checked on the screens): the rippling
+   surfaces run through the text, so the layer also keeps the text's alpha
+   mask (57 KB PSRAM a screen) and each frame redraws only the rows round
+   each surface, putting the text back from the mask. ~16 ms a frame.
+   Bus check: three screens animating (tanks, orbit, pace) all ran at 14 fps;
+   all five animating ran at 11 fps each, with the sender busy only 28% of
+   the time. The limit is drawing on core 0 (about 72 ms for all five
+   frames), not the SPI bus.
+   Decided on the bench: no amber/red as usage climbs; session stays
+   orange and week sand at any level (grey with no reading), since the
+   level shows it. Only pace's verdict line still uses amber and red.
+4. Command Center: a style choice, binding several feeds to one screen, and a
+   status line script that publishes `rate_limits` from Claude Code.
+
 ## Open decisions
 
 - None right now.

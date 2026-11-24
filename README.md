@@ -153,12 +153,14 @@ curl -X POST http://orbit-station-xx.local/orbit/api/v1/screens/2 \
 | `custom` | Your own drawing: text, lines, shapes and arcs |
 | `screensaver` | Asteroids, matrix rain, warp, an orrery or radar, or all in turn |
 | `makapix` | Animated pixel art from Makapix Club, crisp or filling the screen, with a transition between pieces (`transition`: `random`, `none`, or an effect listed in `/orbit/api/v1/capabilities`) |
+| `claudeUsage` | Claude session and weekly limit use, reset countdowns, and whether the week is on pace (`session`, `week` in percent; `sessionResetsAt`, `weekResetsAt` in Unix seconds). `style`: `pace` (bars), `orbit` (rings) or `tanks` (liquid) |
 | `blank` | Nothing |
 
 The full request and response formats are the **orbit-api v1** spec, shared
 with info-orbs' OrbIt widget: see
 [`docs/orbit-api.md`](https://github.com/billydavis/OrbIt-Command-Center/blob/master/docs/orbit-api.md)
-in OrbIt Command Center. `makapix` is Orbit Station's addition.
+in OrbIt Command Center. `makapix` and `claudeUsage` are Orbit Station's
+additions.
 
 Board-wide endpoints:
 
@@ -187,7 +189,7 @@ board keeps its own credentials from then on.
 
 What each screen shows (and its settings) is saved on the board and comes
 back after a restart. Live values a client keeps sending, like a gauge's
-value or sysMonitor's readings, are never written to flash, so updating them
+value, sysMonitor's readings or claudeUsage's percentages, are never written to flash, so updating them
 every few seconds forever does no harm.
 
 ## How it works
