@@ -46,6 +46,13 @@ namespace api {
             doc["firmwareBuilt"] = BUILT;
             doc["firmwareCommit"] = BUILD_COMMIT;
             doc["firmwareElfSha"] = elfSha();
+            // Longest wait for and hold of the screen layout lock since boot.
+            const orbit::LockStats l = orbit::lockStatsSinceBoot();
+            JsonObject lock = doc["layoutLockMs"].to<JsonObject>();
+            lock["renderWaited"] = l.renderWaitUs / 1000.0f;
+            lock["renderHeld"] = l.renderHoldUs / 1000.0f;
+            lock["apiWaited"] = l.apiWaitUs / 1000.0f;
+            lock["apiHeld"] = l.apiHoldUs / 1000.0f;
             doc["widget"] = "OrbIt"; // the only one; kept for info-orbs clients
             health::toJson(doc.as<JsonObject>());
             sendJson(200, doc);

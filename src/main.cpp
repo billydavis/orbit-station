@@ -172,6 +172,7 @@ namespace {
         last = millis();
         if (!reporting) {
             for (int s = 0; s < display::NUM_SCREENS; s++) display::takeStats(s); // keep counts fresh
+            orbit::takeLockStats();
             return;
         }
 
@@ -189,7 +190,9 @@ namespace {
         Serial.printf(" | %.0f%% of each frame sent, %lu whole | sender busy %.0f%% | draw ms", sentPct, (unsigned long) whole,
                       busyUs / 10.0f / elapsed);
         for (int s = 0; s < display::NUM_SCREENS; s++) Serial.printf(" %.1f", orbit::takeDrawUs(s) / 1000.0f);
-        Serial.println();
+        const orbit::LockStats l = orbit::takeLockStats();
+        Serial.printf(" | lock ms: render waited %.1f held %.1f, API waited %.1f held %.1f\n", l.renderWaitUs / 1000.0f,
+                      l.renderHoldUs / 1000.0f, l.apiWaitUs / 1000.0f, l.apiHoldUs / 1000.0f);
     }
 }
 

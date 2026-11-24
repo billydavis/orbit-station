@@ -65,3 +65,18 @@ Feed responses are read using `http.getString()` and then parsed into a JSON doc
 2. Measure layout-lock contention and shorten critical sections if it affects responsiveness.
 3. Profile the radar effect and Makapix peak memory.
 4. Pursue tile-level invalidation or streaming feed parsing only if measurements justify the added complexity.
+
+## Follow-up (2026-11-24)
+
+Each item was checked against the code and PLAN.md before acting on it. Results and measurements are in PLAN.md, "Engineering review follow-up".
+
+| Item | Outcome |
+|---|---|
+| 1. Automated validation | **Partly done.** A GitHub Actions workflow builds `env:s3` on every push to main (`env:s3-ota` is the same firmware with a different upload, so it isn't built twice). Host-side tests were decided against: controls depend on LovyanGFX and Arduino types, so only thin pure-logic pieces could be tested without heavy stubbing. |
+| 2. Split `Orbit.cpp` | **Not done, by decision.** At about 600 lines with clear sections, splitting it would mean sharing the slots and lock across files for little gain. |
+| 3. Exact build artifacts | **Done.** Each build's ELF, map, image, uncommitted changes and tool versions are kept in `builds/` (gitignored), libraries are pinned, and the board reports `firmwareCommit` and `firmwareElfSha` (the hash crash output prints). The soak crash itself can't be confirmed: its ELF no longer exists. Nothing is published; there are no releases. |
+| 4. Layout-lock hold times | **Measured; no change.** The API waits at most ~19 ms and a saving write holds the lock ~32 ms. The longest hold (170 ms) is claudeUsage repainting its cached layer, which stalls the other screens regardless of the lock, since one task draws them all. Lock times stay in the `f` report and `/api/v1/system`. |
+| Perf 1. Radar effect | **Already done before the review.** The 55-72 ms in PLAN.md was the old pie-slice version; the radar draws triangles and every effect draws in 5-8 ms. |
+| Perf 2. Tile hashing | **Not pursued.** The sender (core 1) was busy 28% of the time with all five screens animating; the limit is drawing on core 0, so cheaper hashing wouldn't raise the frame rate. |
+| Perf 3. Makapix memory | **Done.** Downloads capped at ~2.1 MB (was 4 MB), and art is fetched only if 1 MB of PSRAM stays free. Ten minutes with Makapix on all five screens left at least 2.85 MB free. |
+| Perf 4. Feed buffering | **Not needed.** Allocations over 256 bytes go to PSRAM, so `getString()` doesn't use internal RAM, and the replies are a few KB. |

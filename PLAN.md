@@ -318,6 +318,20 @@ orbit and twin tanks.
    logged). Ten minutes with Makapix on all five screens, art changing every
    20 s: lowest free PSRAM 2.85 MB (art and downloads took ~3.2 MB at peak),
    largest free internal block never below 62 KB, nothing skipped.
+3. **Layout lock** (measured, no change needed): the longest wait for and
+   hold of the lock, renderer and API apart, are in the `f` report and in
+   `/api/v1/system` (`layoutLockMs`, since boot). With the usual layout
+   (Makapix x2, screensaver, clock, claudeUsage tanks): 50 value-only
+   updates and 30 that changed the readings, then two real layout saves.
+   The API never waited more than 19 ms and held it at most 14 ms for a
+   value-only update, 32 ms for one that saved to NVS (the renderer waited
+   33 ms for that one). The renderer held it up to 170 ms, when claudeUsage
+   repaints its cached layer after a reading changes; that stalls the other
+   screens for those frames anyway, since they're drawn by the same task, so
+   moving the draw out of the lock wouldn't help them. Drawing outside the
+   lock would also need care, since four controls keep state that `applied()`
+   (API) changes and `draw()` (renderer) reads. If the 170 ms ever matters,
+   the fix is in claudeUsage's repaint, not the lock.
 
 ## Open decisions
 

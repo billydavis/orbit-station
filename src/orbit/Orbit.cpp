@@ -78,10 +78,33 @@ namespace orbit {
         };
         Slot slots[NUM_SCREENS];
         SemaphoreHandle_t layoutLock; // the API (core 1) writes while the renderer (core 0) reads
+        TaskHandle_t renderHandle;
+
+        // Longest waits for and holds of the layout lock, by the renderer and
+        // by everyone else (the API): since the last frame report, and since boot.
+        LockStats lockWindow, lockBoot;
+
+        void noteMax(uint32_t &slot, uint32_t us) {
+            if (us > slot) slot = us;
+        }
 
         struct Lock {
-            Lock() { xSemaphoreTake(layoutLock, portMAX_DELAY); }
-            ~Lock() { xSemaphoreGive(layoutLock); }
+            bool render;
+            uint32_t held;
+            Lock() : render(xTaskGetCurrentTaskHandle() == renderHandle) {
+                const uint32_t asked = micros();
+                xSemaphoreTake(layoutLock, portMAX_DELAY);
+                held = micros();
+                const uint32_t waited = held - asked;
+                noteMax(render ? lockWindow.renderWaitUs : lockWindow.apiWaitUs, waited);
+                noteMax(render ? lockBoot.renderWaitUs : lockBoot.apiWaitUs, waited);
+            }
+            ~Lock() {
+                const uint32_t hold = micros() - held;
+                xSemaphoreGive(layoutLock);
+                noteMax(render ? lockWindow.renderHoldUs : lockWindow.apiHoldUs, hold);
+                noteMax(render ? lockBoot.renderHoldUs : lockBoot.apiHoldUs, hold);
+            }
         };
 
         // Checks one {control, params} entry. For an API write, screen is the
@@ -565,8 +588,17 @@ namespace orbit {
             Lock lock;
             loadLayout();
         }
-        xTaskCreatePinnedToCore(renderTask, "orbit", 8192, nullptr, 1, nullptr, 0);
+        lockWindow = lockBoot = LockStats(); // restoring at start-up isn't the API
+        xTaskCreatePinnedToCore(renderTask, "orbit", 8192, nullptr, 1, &renderHandle, 0);
     }
+
+    LockStats takeLockStats() {
+        const LockStats s = lockWindow;
+        lockWindow = LockStats();
+        return s;
+    }
+
+    LockStats lockStatsSinceBoot() { return lockBoot; }
 
     void registerRoutes(WebServer &s) {
         server = &s;

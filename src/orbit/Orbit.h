@@ -27,6 +27,15 @@ namespace orbit {
     // microseconds (for the serial frame report).
     uint32_t takeDrawUs(int screen);
 
+    // Longest wait for and hold of the layout lock, in microseconds, by the
+    // renderer and by the API. take...() covers the time since its last call
+    // (serial frame report); ...SinceBoot() everything (/api/v1/system).
+    struct LockStats {
+        uint32_t renderWaitUs = 0, renderHoldUs = 0, apiWaitUs = 0, apiHoldUs = 0;
+    };
+    LockStats takeLockStats();
+    LockStats lockStatsSinceBoot();
+
     // Watchdog test: the render task stops responding for 15 s (serial z).
     void stallForTest();
 
