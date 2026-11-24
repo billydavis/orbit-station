@@ -40,6 +40,8 @@ namespace api {
             doc["minFreeHeap"] = ESP.getMinFreeHeap();
             doc["largestFreeBlock"] = ESP.getMaxAllocHeap(); // HTTPS needs about 17 KB in one piece
             doc["freePsram"] = ESP.getFreePsram();
+            doc["minFreePsram"] = ESP.getMinFreePsram();
+            doc["largestFreePsramBlock"] = ESP.getMaxAllocPsram();
             doc["firmware"] = "Orbit Station " ORBIT_STATION_VERSION;
             doc["firmwareBuilt"] = BUILT;
             doc["firmwareCommit"] = BUILD_COMMIT;

@@ -302,6 +302,23 @@ orbit and twin tanks.
    (the gauge's 1e-4 float margin hid ~2 days of change in a Unix time).
    After a board restart the app re-sent the readings ~4 s after boot.
 
+### Engineering review follow-up (docs/engineering-review.md)
+
+1. **Build records** (done): see the crash item under "Still open" above.
+   A GitHub Actions workflow builds `env:s3` on every push to main.
+2. **Makapix memory** (done, checked on the screens): five screens each
+   keeping up to 1 MB of art, plus a download (then up to 4 MB) and a decode,
+   could need more than the 8 MB of PSRAM, and past PSRAM allocations fall
+   back to the internal RAM HTTPS needs. Downloads are now capped at twice the
+   decoded budget (~2.1 MB; nothing that decodes within 1 MB is bigger), and a
+   post is fetched only if 1 MB of PSRAM stays free after it; otherwise it's
+   skipped, logged once, and the next one tried after 60 s while the screen
+   keeps its art. `/api/v1/system` reports `minFreePsram` and
+   `largestFreePsramBlock`. Checked with a 7 MB test reserve (skipped and
+   logged). Ten minutes with Makapix on all five screens, art changing every
+   20 s: lowest free PSRAM 2.85 MB (art and downloads took ~3.2 MB at peak),
+   largest free internal block never below 62 KB, nothing skipped.
+
 ## Open decisions
 
 - None right now.

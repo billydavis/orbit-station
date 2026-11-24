@@ -14,7 +14,14 @@ namespace makapix {
         const char *BASE = "https://makapix.club/api";
         constexpr int SCREENS = display::NUM_SCREENS;
         constexpr size_t ART_BUDGET = 1024 * 1024;     // decoded bytes per artwork (all frames)
-        constexpr size_t MAX_DOWNLOAD = 4 * 1024 * 1024; // Makapix allows files up to 5 MiB
+        // Makapix allows files up to 5 MiB, but anything that decodes within
+        // ART_BUDGET is at most about twice that (a 32-bit BMP, an
+        // incompressible lossless WebP).
+        constexpr size_t MAX_DOWNLOAD = 2 * ART_BUDGET + 64 * 1024;
+        // PSRAM left free for everything else while art downloads and
+        // decodes. Past PSRAM, allocations fall back to internal RAM, which
+        // HTTPS needs.
+        constexpr size_t PSRAM_RESERVE = 1024 * 1024;
         constexpr uint32_t IN_USE_MS = 10000;            // a screen that stopped asking is let go
         constexpr uint32_t POLL_PAIRING_MS = 10000;      // credentials endpoint: 30/min/IP
         constexpr uint32_t RETRY_MS = 60000;
@@ -25,6 +32,7 @@ namespace makapix {
         struct Post {
             uint32_t id;
             String url, format, owner;
+            size_t bytes; // decoded size, as Makapix reports it
         };
 
         struct FeedState {
@@ -202,9 +210,10 @@ namespace makapix {
                 if (p["kind"] != "artwork" || !p["art_url"].is<const char *>()) continue;
                 // Skip what can't fit before downloading it.
                 const size_t w = p["width"] | 0, h = p["height"] | 0, n = max((int) (p["frame_count"] | 1), 1);
-                if (w * h * 2 * n > ART_BUDGET) continue;
+                const size_t bytes = w * h * 2 * n;
+                if (bytes > ART_BUDGET) continue;
                 fs.posts.push_back({p["post_id"].as<uint32_t>(), p["art_url"].as<String>(), p["native_format"].as<String>(),
-                                    p["owner_handle"] | ""});
+                                    p["owner_handle"] | "", bytes ? bytes : ART_BUDGET});
             }
             fs.cursor = reply["has_more"] ? reply["next_cursor"].as<String>() : String();
             fs.problem = fs.posts.empty() ? "Nothing to show in this channel" : "";
@@ -215,10 +224,29 @@ namespace makapix {
         // True while downloads fail for want of a connection (not a bad file).
         bool waitingForNetwork = false;
 
-        // offline is set when the download failed for want of a connection (DNS,
-        // connect, timeout), as opposed to a problem with this artwork.
-        std::shared_ptr<Artwork> fetchArt(const Post &p, String &error, bool &offline) {
-            offline = false;
+        // True while art is skipped for want of PSRAM.
+        bool waitingForMemory = false;
+
+        // Whether need more bytes of PSRAM can be used, one block of block
+        // bytes among them, and still leave PSRAM_RESERVE free.
+        bool roomFor(size_t need, size_t block) {
+            return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) >= need + PSRAM_RESERVE &&
+                   heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) >= block;
+        }
+
+        // Why fetchArt failed, when it wasn't this artwork's fault.
+        enum class Shortage : uint8_t { None, Network, Memory };
+
+        // shortage is Network when the download failed for want of a
+        // connection (DNS, connect, timeout), Memory when there wasn't room
+        // for it; None for a problem with this artwork.
+        std::shared_ptr<Artwork> fetchArt(const Post &p, String &error, Shortage &shortage) {
+            shortage = Shortage::None;
+            if (!roomFor(p.bytes, 0)) {
+                shortage = Shortage::Memory;
+                error = "not enough memory";
+                return nullptr;
+            }
             uint8_t *buf = nullptr;
             int size = 0;
             {
@@ -233,7 +261,7 @@ namespace makapix {
             const int code = http.GET();
             if (code != 200) {
                 http.end();
-                offline = code < 0; // HTTPClient's own errors: no connection at all
+                if (code < 0) shortage = Shortage::Network; // HTTPClient's own errors: no connection at all
                 error = "download failed (HTTP " + String(code) + ")";
                 return nullptr;
             }
@@ -243,7 +271,13 @@ namespace makapix {
                 error = "unexpected file size";
                 return nullptr;
             }
-            buf = (uint8_t *) heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+            if (!roomFor(size + p.bytes, size)) {
+                http.end();
+                shortage = Shortage::Memory;
+                error = "not enough memory";
+                return nullptr;
+            }
+            buf =(uint8_t *) heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
             if (!buf) {
                 http.end();
                 error = "out of memory";
@@ -336,9 +370,21 @@ namespace makapix {
             fs.failedAt = 0;
             const Post post = fs.posts[fs.next++];
             String error;
-            bool offline;
-            auto art = fetchArt(post, error, offline);
-            if (!art && offline) {
+            Shortage shortage;
+            auto art = fetchArt(post, error, shortage);
+            if (!art && shortage == Shortage::Memory) {
+                // Other screens' art fills PSRAM. Keep showing what's there and
+                // try a later (perhaps smaller) post in a while.
+                fs.failedAt = millis();
+                if (!waitingForMemory) {
+                    health::event("Makapix: not enough memory for post %u (%u KB PSRAM free), retrying every %lus",
+                                  post.id, (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+                                  (unsigned long) (RETRY_MS / 1000));
+                    waitingForMemory = true;
+                }
+                return true;
+            }
+            if (!art && shortage == Shortage::Network) {
                 // Not this artwork's fault: keep it for later instead of skipping
                 // through the whole queue while the network is down.
                 fs.next--;
@@ -358,6 +404,7 @@ namespace makapix {
                 health::event("Makapix: reachable again");
                 waitingForNetwork = false;
             }
+            waitingForMemory = false;
             Serial.printf("Makapix: screen %d shows post %u (%dx%d, %u frames) by %s\n", pick, post.id, art->width, art->height,
                           (unsigned) art->frames.size(), post.owner.c_str());
             {
