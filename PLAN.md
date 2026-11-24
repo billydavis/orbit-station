@@ -283,8 +283,18 @@ orbit and twin tanks.
    Decided on the bench: no amber/red as usage climbs; session stays
    orange and week sand at any level (grey with no reading), since the
    level shows it. Only pace's verdict line still uses amber and red.
-4. Command Center: a style choice, binding several feeds to one screen, and a
-   status line script that publishes `rate_limits` from Claude Code.
+4. **Command Center** (built in OrbIt-Command-Center, tried end to end with
+   the board; not yet committed there): a Claude Usage control with a style
+   choice. It always follows `claude.session`, `claude.week`,
+   `claude.sessionResetsAt` and `claude.weekResetsAt`: the binding is built
+   into the app's Rust side (nothing to pick, nothing saved), so any screen
+   showing it gets the readings, however it was set.
+   `examples/claude-usage-statusline.ps1` is a Claude Code status line that
+   publishes them (~0.3 s a run). Two fixes the reset times needed in the
+   app: whole feed readings now go to the board as JSON integers (the
+   firmware rejects `1795535998.0`), and whole readings compare exactly
+   (the gauge's 1e-4 float margin hid ~2 days of change in a Unix time).
+   After a board restart the app re-sent the readings ~4 s after boot.
 
 ## Open decisions
 
