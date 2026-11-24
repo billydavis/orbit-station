@@ -66,7 +66,8 @@ namespace {
         uint8_t mac[6];
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
-        Serial.printf("\nOrbit Station %s (built %s)\n", ORBIT_STATION_VERSION, BUILD_STAMP);
+        Serial.printf("\nOrbit Station %s (built %s, commit %s, ELF %s)\n", ORBIT_STATION_VERSION, BUILD_STAMP, BUILD_COMMIT,
+                      elfSha());
         Serial.printf("Chip: %s rev %d, %d cores, %lu MHz\n", ESP.getChipModel(), chip.revision, chip.cores, (unsigned long) ESP.getCpuFreqMHz());
         Serial.printf("Flash: %lu MB\n", (unsigned long) (ESP.getFlashChipSize() / (1024 * 1024)));
         Serial.printf("PSRAM: %lu KB total, %lu KB free\n", (unsigned long) (ESP.getPsramSize() / 1024), (unsigned long) (ESP.getFreePsram() / 1024));

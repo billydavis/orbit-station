@@ -1,0 +1,26 @@
+# Builds the firmware from a clean checkout on every push to main, so a file
+# that was never committed or a library change shows up straight away. Only
+# env:s3 is built: env:s3-ota is the same firmware with a different upload.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -e s3

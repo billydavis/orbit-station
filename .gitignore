@@ -5,3 +5,4 @@
 *.bin
 *.elf
 src/core/BuildStamp.cpp
+builds/

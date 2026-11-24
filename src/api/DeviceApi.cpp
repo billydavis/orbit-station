@@ -42,6 +42,8 @@ namespace api {
             doc["freePsram"] = ESP.getFreePsram();
             doc["firmware"] = "Orbit Station " ORBIT_STATION_VERSION;
             doc["firmwareBuilt"] = BUILT;
+            doc["firmwareCommit"] = BUILD_COMMIT;
+            doc["firmwareElfSha"] = elfSha();
             doc["widget"] = "OrbIt"; // the only one; kept for info-orbs clients
             health::toJson(doc.as<JsonObject>());
             sendJson(200, doc);

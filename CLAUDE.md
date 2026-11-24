@@ -20,7 +20,8 @@ pio device monitor                                                 # serial, 115
 ```
 
 - The name to use is on the first screen at boot. Over-the-air updates need the PC's firewall to allow incoming TCP on port 47269.
-- `scripts/build_stamp.py` writes `src/core/BuildStamp.cpp` (gitignored) on every build, so `firmwareBuilt` is always right.
+- `scripts/build_stamp.py` writes `src/core/BuildStamp.cpp` (gitignored) on every build, so `firmwareBuilt` and `firmwareCommit` are always right. After each build it zips the ELF, map, image, uncommitted changes and tool versions into `builds/` (gitignored, newest 20 kept). To decode a crash, use the zip whose `build.json` `elfSha256` starts with the board's `firmwareElfSha` (or the crash's `ELF file SHA256` line).
+- A GitHub Actions workflow (`.github/workflows/build.yml`) builds `s3` on every push to main.
 - Format C++ with the repo's `.clang-format`.
 - Serial commands (`r`, `i`, `f`, `n`, `w`, `l`, `x`, `q`, `z`, `s`, `?`) are listed at the top of `src/main.cpp`. `f` prints fps and draw times; `q` and `x` test WiFi recovery; `z` tests the watchdog.
 

@@ -51,7 +51,7 @@ namespace net {
                       "<meta name=viewport content='width=device-width,initial-scale=1'>"
                       "<title>Orbit Station</title></head><body style='font-family:sans-serif'>"
                       "<h1>Orbit Station</h1><ul>");
-            html += String("<li>Firmware " ORBIT_STATION_VERSION " (built ") + BUILD_STAMP + ")</li>";
+            html += String("<li>Firmware " ORBIT_STATION_VERSION " (built ") + BUILD_STAMP + ", " + BUILD_COMMIT + ")</li>";
             html += "<li>Address " + String(s.ip) + " (" + s.hostname + ".local)</li>";
             html += "<li>WiFi " + String(s.ssid) + ", signal " + String(WiFi.RSSI()) + " dBm</li>";
             html += "<li>Up " + String(millis() / 1000) + " s</li>";

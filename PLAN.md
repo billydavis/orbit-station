@@ -236,7 +236,13 @@ tripped the watchdog, and a silent reconnect after a router update.
 
 Still open:
 
-- Confirm the crash location by rebuilding the exact firmware that crashed.
+- ~~Confirm the crash location by rebuilding the exact firmware that crashed.~~
+  Not possible: that ELF is gone and the build may have had uncommitted
+  changes. Every build now keeps its ELF, map, image, uncommitted changes and
+  tool versions in `builds/` (gitignored, newest 20), and the board reports
+  `firmwareCommit` and `firmwareElfSha` (the hash a crash report's
+  `ELF file SHA256` line shows), so the next crash can be decoded exactly.
+  Libraries are pinned to exact versions.
 - Test the Makapix outage fix with WiFi up and the internet down. The `q` WiFi
   test doesn't reach that code, because Makapix waits while WiFi is down.
 - A real router reboot on the 30-second retry build.
