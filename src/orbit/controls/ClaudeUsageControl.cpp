@@ -238,14 +238,17 @@ namespace orbit {
             y = CENTRE - lroundf(radius * cosf(a));
         }
 
-        // fg over bg, a from 0 (all bg) to 1 (all fg), both RGB565.
-        uint16_t blend(uint16_t fg, uint16_t bg, float a) {
-            const int k = lroundf(a * 256);
+        // fg over bg, k from 0 (all bg) to 256 (all fg), both RGB565.
+        uint16_t blend256(uint16_t fg, uint16_t bg, int k) {
             const int r = ((bg >> 11) * (256 - k) + (fg >> 11) * k) >> 8;
             const int g = (((bg >> 5) & 63) * (256 - k) + ((fg >> 5) & 63) * k) >> 8;
             const int b = ((bg & 31) * (256 - k) + (fg & 31) * k) >> 8;
             return (r << 11) | (g << 5) | b;
         }
+
+        // The same with a from 0 to 1. a is never negative here, so adding
+        // a half and truncating rounds it.
+        uint16_t blend(uint16_t fg, uint16_t bg, float a) { return blend256(fg, bg, (int) (a * 256 + 0.5f)); }
 
         // An anti-aliased arc round the centre, radius R and half a line's
         // width thick, from 12 o'clock clockwise through sweep degrees, with
@@ -320,6 +323,8 @@ namespace orbit {
         constexpr int TANK_LOGO_Y = 54, TANK_LOGO_R = 20, DISC_R = 25;
         constexpr int TANK_COLUMN[2] = {62, 178};
         constexpr float RIPPLE = 2.6f; // pixels either way
+        // The rows the text can reach (the percent, the label and the note).
+        constexpr int TEXT_TOP = 90, TEXT_BOTTOM = 190;
 
         // The liquid itself is a darker version of each window's colour.
         constexpr uint16_t SESSION_LIQUID = 0x5984; // #5c3024
@@ -373,46 +378,100 @@ namespace orbit {
             return v;
         }
 
-        // Which tank a column is in, or -1 for the gap between them.
-        int tankAt(int x) { return x <= 118 ? 0 : x >= 122 ? 1 : -1; }
-
         float clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+        // The liquid and the 2 px line along its surface, d pixels below the
+        // surface (negative is above it). Away from the surface it's plain
+        // liquid or plain background, with no blending.
+        uint16_t liquidAt(const Tank &t, float d) {
+            if (d >= 1.5f) return t.fill;
+            if (d <= -1.5f) return BG;
+            const uint16_t c = blend(t.fill, BG, clamp01(d + 0.5f));
+            return blend(t.line, c, clamp01(1.5f - fabsf(d)));
+        }
+
+        // Inside the dial: the last pixel either side of the centre on row y.
+        int dialHalf(int y) {
+            const int cy = y - CENTRE, r2 = 119 * 119 - cy * cy;
+            if (r2 < 0) return -1; // the row misses the dial
+            int h = (int) sqrtf((float) r2);
+            while (h * h > r2) h--;
+            while ((h + 1) * (h + 1) <= r2) h++;
+            return h;
+        }
+
+        // The logo's disc over c, which hides the liquid behind the logo.
+        uint16_t underDisc(uint16_t c, int x, int y) {
+            const int lx = x - CENTRE, ly = y - TANK_LOGO_Y, l2 = lx * lx + ly * ly;
+            if (l2 >= (DISC_R + 1) * (DISC_R + 1)) return c;
+            if (l2 * 4 <= (2 * DISC_R - 1) * (2 * DISC_R - 1)) return BG; // a whole pixel inside
+            return blend(BG, c, clamp01(DISC_R + 0.5f - sqrtf(l2)));
+        }
 
         // One pixel of the tanks without the text, surface being where this
         // column's surface is (it moves when rippling).
         uint16_t tankPixel(const Tank &t, int x, int y, float surface) {
             const int cx = x - CENTRE, cy = y - CENTRE;
             if (cx * cx + cy * cy > 119 * 119) return BG;
-            const float d = y - surface;
-            uint16_t c = blend(t.fill, BG, clamp01(d + 0.5f));  // the liquid below the surface
-            c = blend(t.line, c, clamp01(1.5f - fabsf(d)));      // a 2 px line along it
-            const int lx = x - CENTRE, ly = y - TANK_LOGO_Y, l2 = lx * lx + ly * ly;
-            if (l2 < (DISC_R + 1) * (DISC_R + 1)) c = blend(BG, c, clamp01(DISC_R + 0.5f - sqrtf(l2))); // the logo's disc
-            return c;
+            return underDisc(liquidAt(t, y - surface), x, y);
         }
 
-        uint16_t withText(uint16_t c, uint8_t alpha) { return alpha ? blend(WHITE, c, alpha / 255.0f) : c; }
+        uint16_t withText(uint16_t c, uint8_t alpha) {
+            return alpha ? blend256(WHITE, c, (alpha * 256 + 127) / 255) : c;
+        }
 
         // The whole picture, surfaces flat. When mask is given it's filled
-        // with the text's alpha for the ripple to use.
+        // with the text's alpha for the ripple to use. With the surfaces
+        // flat, a tank's colour only changes along a row at the dial's edge
+        // and the logo's disc, so each row is worked out once.
         void paintTanks(LGFX_Sprite &spr, const Tanks &v, uint8_t *mask) {
             // The text first, white on black, so its alpha can be read back.
-            spr.fillScreen(BG);
+            // Only its band is cleared and read back: the rest of the layer
+            // is written over whole by the pass below.
+            spr.fillRect(0, TEXT_TOP, W, TEXT_BOTTOM - TEXT_TOP + 1, BG);
+            spr.setClipRect(0, TEXT_TOP, W, TEXT_BOTTOM - TEXT_TOP + 1);
             for (int i = 0; i < 2; i++) {
                 const Tank &t = v.tanks[i];
                 text::draw(spr, t.percent, TANK_COLUMN[i], 122, 25, Align::MiddleCenter, TFT_WHITE, BG);
                 text::draw(spr, i ? "WEEK" : "SESSION", TANK_COLUMN[i], 149, 8, Align::MiddleCenter, TFT_WHITE, BG);
                 if (t.note.length()) text::draw(spr, t.note, TANK_COLUMN[i], 167, 9, Align::MiddleCenter, TFT_WHITE, BG);
             }
+            spr.clearClipRect();
+            // Each row is built in internal RAM, byte-swapped as the sprite
+            // holds it: plain runs first (background, session's tank, the
+            // gap, week's tank, background), then blending only round the
+            // logo's disc and where there's text.
+            static uint16_t line[W];
+            static uint8_t maskLine[W];
+            const uint16_t bg = __builtin_bswap16(BG);
             uint16_t *buf = (uint16_t *) spr.getBuffer();
             for (int y = 0; y < W; y++) {
-                for (int x = 0; x < W; x++) {
-                    uint16_t &px = buf[y * W + x];
-                    const uint8_t alpha = ((__builtin_bswap16(px) >> 5) & 63) * 255 / 63; // green: 6 bits
-                    if (mask) mask[y * W + x] = alpha;
-                    const int i = tankAt(x);
-                    const uint16_t c = i < 0 ? BG : tankPixel(v.tanks[i], x, y, v.tanks[i].level);
-                    px = __builtin_bswap16(withText(c, alpha));
+                const bool hasText = y >= TEXT_TOP && y <= TEXT_BOTTOM;
+                if (hasText) {
+                    memcpy(line, buf + y * W, sizeof line);
+                    for (int x = 0; x < W; x++) maskLine[x] = ((__builtin_bswap16(line[x]) >> 5) & 63) * 255 / 63; // green: 6 bits
+                }
+
+                const int half = dialHalf(y), left = CENTRE - half, right = CENTRE + half;
+                for (int x = 0; x < W; x++) line[x] = bg;
+                for (int i = 0; i < 2; i++) {
+                    const uint16_t c = __builtin_bswap16(liquidAt(v.tanks[i], y - v.tanks[i].level));
+                    const int from = max(left, i ? 122 : 0), to = min(right, i ? W - 1 : 118);
+                    for (int x = from; x <= to; x++) line[x] = c;
+                }
+                if (abs(y - TANK_LOGO_Y) <= DISC_R) {
+                    for (int x = CENTRE - DISC_R; x <= CENTRE + DISC_R; x++)
+                        if (line[x] != bg) line[x] = __builtin_bswap16(underDisc(__builtin_bswap16(line[x]), x, y));
+                }
+                if (hasText) {
+                    for (int x = 0; x < W; x++)
+                        if (maskLine[x]) line[x] = __builtin_bswap16(withText(__builtin_bswap16(line[x]), maskLine[x]));
+                }
+
+                memcpy(buf + y * W, line, sizeof line);
+                if (mask) {
+                    if (hasText) memcpy(mask + y * W, maskLine, sizeof maskLine);
+                    else memset(mask + y * W, 0, W);
                 }
             }
         }

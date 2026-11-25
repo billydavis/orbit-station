@@ -332,29 +332,29 @@ orbit and twin tanks.
    lock would also need care, since four controls keep state that `applied()`
    (API) changes and `draw()` (renderer) reads. If the 170 ms ever matters,
    the fix is in claudeUsage's repaint, not the lock.
-4. **claudeUsage layer repaint** (measured, not started): a `tanks`
-   repaint costs 110-170 ms, and the other screens freeze for 2-3 frames
-   while it runs. It happens on every reading change and also **every
-   minute**, since the countdown note is part of the layer's key (the week's
-   note changes hourly). Timed on the board (9 repaints): clearing 3-6 ms;
-   text 38-68 ms, 5-15 ms a string, even the fixed `SESSION` and `WEEK`
-   every time (the glyph cache is only 8 KB, `setCacheSize(128, 128, 8192)`
-   in `ui/Text.cpp`, and `text::draw` lays each string out twice: once to
-   measure it, once to draw it); pixel pass 59-72 ms (`tankPixel()` on all
-   57,600 pixels, 2-3 `blend()`s each with a `lroundf()` call, `sqrtf` near
-   the logo, though nearly every pixel is plain background or liquid).
-   Fixes, cheapest first:
-   1. Pixel pass: fill each row's runs of plain background and liquid
-      directly, and blend only near the surface, the disc's edge and text;
-      integer rounding in `blend()`. Expected ~60 → 5-10 ms; also speeds up
-      the ripple drawn every frame.
-   2. Raise the glyph cache to about 64 KB (PSRAM). Helps every control's
-      text.
-   3. When only the countdown note changed, repaint just its area
-      (~70x16 px) instead of the whole layer, keeping the text mask right.
-   Do 1 and 2, measure, then decide on 3. `pace` and `orbit` have the same
-   text cost and every-minute repaint; `orbit` also draws its anti-aliased
-   rings pixel by pixel.
+4. **claudeUsage layer repaint** (1 and 2 done, checked on the screens):
+   a `tanks` repaint cost 110-170 ms, and the other screens froze for 2-3
+   frames while it ran. It happens on every reading change and also
+   **every minute**, since the countdown note is part of the layer's key.
+   Timed before (9 repaints): clearing 3-6 ms; text 38-68 ms, 5-15 ms a
+   string, even the fixed `SESSION` and `WEEK` every time (8 KB glyph
+   cache, and `text::draw` lays each string out twice); pixel pass 59-72 ms
+   (`tankPixel()` with 2-3 float `blend()`s on all 57,600 pixels).
+   1. Pixel pass (done): each row is built in an internal-RAM line as plain
+      runs (background, session liquid, gap, week liquid, background), then
+      blended only round the logo's disc and in the text band (rows
+      90-190, the only rows cleared and read back); `blend()` rounds with
+      integers. The ripple shares the faster helpers.
+   2. Glyph cache raised to 64 KB (done). FreeType allocates from PSRAM
+      here (`FileSupport.h`), so it costs no internal RAM.
+   After: a `tanks` repaint is 19-28 ms (text 6-13 ms, pixel pass ~11 ms);
+   the first one after boot ~50-60 ms while the glyph cache fills. `pace`
+   repaints in ~23 ms (all text). Largest free internal block unchanged
+   (~84 KB).
+   3. Repainting only the countdown note: not worth it at ~20 ms (one
+      frame at most at 15 fps). Skipped.
+   Next: `orbit` still takes 70-80 ms a repaint, from `smoothArc()` drawing
+   its anti-aliased rings with `readPixel`/`drawPixel` per pixel.
 
 ### Analog clock faces (planned, not started)
 

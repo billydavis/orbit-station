@@ -15,7 +15,10 @@ namespace text {
     }
 
     bool begin() {
-        render.setCacheSize(128, 128, 8192);
+        // FreeType allocates from PSRAM here (FileSupport.h), so a big glyph
+        // cache costs no internal RAM. At 8 KB every repaint reloaded every
+        // glyph, 5-15 ms a string.
+        render.setCacheSize(128, 128, 64 * 1024);
         if (render.loadFont(robotoStart, robotoEnd - robotoStart) != 0) {
             Serial.println("Text: couldn't load the font");
             return false;
