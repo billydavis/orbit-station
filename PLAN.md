@@ -378,20 +378,23 @@ Designs: `docs/mockups/analog-clock.html` (eight finished faces and a
 builder). Today the clock is a 1 px circle, 12 ticks and three `drawLine`
 hands, with five colour params.
 
-**The split.** Command Center designs faces; the board stores them and
-draws whatever moves. Design work moves off the board, so a new dial or
-hand style needs no firmware change, and the firmware stays small.
+**Naming:** "clock face" everywhere (UI, API, files, code), never bare
+"face", so a later feature can't clash with it.
+
+**The split.** Command Center designs clock faces; the board stores them
+and draws whatever moves. Design work moves off the board, so a new dial
+or hand style needs no firmware change, and the firmware stays small.
 
 - **Board (this repo):** keeps time and turns the hands, draws the date
   window, weekday, second hand (tick or sweep) and second time zone, and
-  runs with Command Center closed. It never acts on a face's name.
+  runs with Command Center closed. It never acts on a clock face's name.
 - **Command Center:** draws everything that stays still (background,
   photo, gradient, numerals in any font, ticks) into one 240x240 picture,
-  and describes each hand as outline points. A face is saved there by
-  name, outside the board's NVS.
+  and describes each hand as outline points. Clock faces are saved there
+  by name, outside the board's NVS.
 
-**Face file**, one per screen in LittleFS (`/orbit-face{n}`), written only
-when it changes, like drawings:
+**Clock face file**, one per screen in LittleFS (`/orbit-clockface{n}`),
+written only when it changes, like drawings:
 - the dial picture as PNG (decoder already in the firmware; thin lines
   stay sharp, where JPEG would blur them);
 - JSON for the moving parts: per hand (hour, minute, second, zone) a list
@@ -401,44 +404,78 @@ when it changes, like drawings:
   About 100-150 bytes a hand, which is why it lives in the file, not NVS.
 
 **API (proposal):**
-- `PUT /orbit/api/v1/screens/{n}/face`: picture plus JSON. Stored, then
-  the screen's control params get `faceId` and `faceHash` (settings,
-  saved).
+- `PUT /orbit/api/v1/screens/{n}/clock-face`: picture plus JSON. Stored,
+  then the screen's control params get `clockFaceId` and `clockFaceHash`
+  (settings, saved).
 - The screen's state reports the hash of the file the board actually holds,
-  so Command Center can see a wiped or reflashed board and push the face
-  again.
+  so Command Center can see a wiped or reflashed board and send the clock
+  face again.
 - Per-screen quick options stay plain params: `seconds` (on/off),
   `motion` (tick/sweep), `timeZone` / `zone2`.
-- Built-in faces by name (`face: "classic"` and two or three presets from
-  the mockup), so scripts and other orbit-api clients get a good clock
-  without uploading, and the board has a fallback if a file is missing.
-  The old colour params keep working for `classic`.
+- Built-in clock faces by name (`clockFace: "classic"` and two or three
+  presets from the mockup), so scripts and other orbit-api clients get a
+  good clock without uploading, and the board has a fallback if a file is
+  missing. The old colour params keep working for `classic`.
+- A capability flag, so Command Center shows the clock face picker only
+  on firmware that has it (info-orbs boards keep the colour form).
+- Document all of it in Command Center's `docs/orbit-api.md` before the
+  app side is built.
 
 **Board steps:**
 1. Cached PSRAM layer for the still parts (as claudeUsage does), filled
-   from the built-in face; frame = copy the layer + draw hands. Target
-   2-4 ms a frame. Replace `drawLine` hands with anti-aliased ones
+   from the built-in clock face; frame = copy the layer + draw hands.
+   Target 2-4 ms a frame. Replace `drawLine` hands with anti-aliased ones
    (`drawWedgeLine`, `fillSmoothCircle`). Check on the screens.
+   Done (1edd089): background, ring (`smooth::arc`, now shared in
+   `ui/Smooth`) and ticks in the layer; hands 2 / 1.5 / 1 px wedges. A
+   frame is 8-10 ms, not 2-4 (was 5-6): copying the 115 KB layer is ~5 ms
+   (PSRAM write speed with the sender busy), hands 2-3 ms. 2-4 ms needs
+   restoring only the strips under the old hands, which needs the display
+   to tell a control a picture is unchanged since it drew it (transitions
+   and the status screen also write pictures). Only worth it for the sweep
+   (step 4); at 1 fps it's under 1% of core 0.
 2. Polygon hands: rotate the outline points and fill with smooth edges
    (LovyanGFX has no anti-aliased polygon fill, so our own scanline fill
    with edge coverage). Built-in presets move to the same hand format.
-3. Face file and the upload endpoint: store, decode the PNG into the
-   layer, report the hash, fall back to the built-in face on a missing or
-   bad file. Check value-only updates don't save to NVS.
+3. Clock face file and the upload endpoint: store, decode the PNG into the
+   layer, report the hash, fall back to the built-in clock face on a
+   missing or bad file. Check value-only updates don't save to NVS.
 4. Date window, weekday, second time zone, sweep (~10 fps, costs core-0
    drawing time, not bus time).
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
    a see-through overlay drawn over changing art (the one costly case).
 
 **Command Center (OrbIt-Command-Center, not this repo):**
-- A separate face builder page: large live preview, start from a preset,
-  duplicate and tweak, save by name, later import/export a face as a file.
-  The mockup's drawing code can carry over.
-- In the analog clock control: a face picker with thumbnails, the quick
-  options above, and an "Edit face" link to the builder.
-- Picking a face uploads it to that screen. Editing a face re-uploads it
-  to every screen using it (found by hash), and a board reporting a
-  different hash gets it pushed again.
+- A "Clock faces" rail section between Profiles and Feeds: round
+  thumbnails of the saved clock faces and "New clock face" (starts from a
+  preset gallery, the mockup's eight).
+- The builder takes over the main column while editing (the screen grid
+  shrinks to a strip showing which screens use it): large live preview on
+  the left, the mockup's option sections on the right. Duplicate and
+  tweak, save by name; later import/export as a `.orbitclockface` file
+  and a photo cropper (pan and zoom in the circle).
+- Stored by the Rust side in `persistence/clock_faces.rs` (like
+  `profiles.rs`): `clock-faces.json` plus a folder for photos. What's
+  saved is the recipe (the builder's choices), not the rendered picture.
+- One drawing module, `clockFaceRenderer.ts`: `renderDial(recipe)` → PNG
+  and `handsFor(recipe)` → hand JSON. The builder preview, thumbnails and
+  `ScreenPreview` tiles put them together the way the board does, so the
+  preview is the board's picture, not a likeness.
+- `AnalogClockForm`: a clock face picker with thumbnails, the quick
+  options, and an "Edit clock face" link. The colour form stays for
+  firmware without the capability.
+- Sending follows the existing Apply model: picking or editing a clock
+  face marks the screens using it as changed ("Apply Layout (n)"); on
+  Apply, `useApplyLayout` uploads it (new Rust command in
+  `device/client.rs`) to each screen whose `clockFaceHash` differs, then
+  does the bulk POST. A screen reporting a different hash (e.g. after a
+  reflash) shows "clock face missing" and gets it on the next Apply. A
+  failed upload shows a toast.
+- Profiles keep `clockFaceId` like any other param; applying one uploads
+  the clock faces it needs, and editing a clock face updates every
+  profile using it.
+- Optional "Try on screen n" while editing: sends a draft on a button
+  press, not on every change, since each one writes the board's flash.
 
 ## Open decisions
 
