@@ -17,6 +17,15 @@ namespace text {
     // Antialiasing blends into bg, so pass the colour the text sits on.
     void draw(LGFX_Sprite &spr, const String &str, int x, int y, unsigned size, Align align, uint16_t fg, uint16_t bg);
 
+    // The same with the size as the font's own pixel size (CSS font-size),
+    // not info-orbs' scaled sizes.
+    void drawPx(LGFX_Sprite &spr, const String &str, int x, int y, unsigned px, Align align, uint16_t fg, uint16_t bg);
+
+    // Text blended over whatever is already there (a picture), where draw()
+    // can only blend its edges into one bg colour. Slower: it draws into a
+    // scratch picture first, so keep it for cached layers.
+    void drawOver(LGFX_Sprite &spr, const String &str, int x, int y, unsigned px, Align align, uint16_t fg);
+
     // Width in pixels the text would take at this size.
     int width(const String &str, unsigned size);
 

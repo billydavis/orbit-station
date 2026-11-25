@@ -4,9 +4,11 @@
 #include "makapix/Artwork.h"
 #include "orbit/Orbit.h"
 #include "ui/Smooth.h"
+#include "ui/Text.h"
 #include <LittleFS.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/sha256.h>
+#include <sys/time.h>
 
 namespace orbit {
 
@@ -18,6 +20,9 @@ namespace orbit {
         // The face's centre in continuous pixel coordinates: the middle of
         // pixel (120, 120), as smooth::arc draws round.
         constexpr float MID = CENTRE + 0.5f;
+
+        const char *const MOTIONS[] = {"tick", "sweep", nullptr};
+        constexpr uint32_t TICK_MS = 1000, SWEEP_MS = 100; // the sweep runs at about 10 fps
 
         // #rrggbb as RGB565.
         constexpr uint16_t rgb(uint32_t hex) {
@@ -67,6 +72,18 @@ namespace orbit {
             return h;
         }
 
+        // A triangle pointing out: tip at r1 pixels, base at r0, half wide.
+        Shape arrow(float r0, float r1, float half) {
+            Shape h;
+            const float pts[3][2] = {{-half, r0}, {0, r1}, {half, r0}};
+            for (const auto &p : pts) {
+                h.xy[h.points][0] = unit(p[0]);
+                h.xy[h.points][1] = unit(p[1]);
+                h.points++;
+            }
+            return h;
+        }
+
         // Draws a shape turned angle degrees clockwise from 12 o'clock.
         void drawShape(LGFX_Sprite &spr, const Shape &h, float angle, uint16_t color) {
             const float a = angle * DEG_TO_RAD, s = sinf(a), c = cosf(a);
@@ -85,18 +102,140 @@ namespace orbit {
             }
         }
 
+        // A shape with its own colour; a hand is a few of them, drawn in order.
+        constexpr int MAX_PARTS = 4;
+        struct Part {
+            Shape shape;
+            uint16_t color;
+        };
+        struct Parts {
+            uint8_t count = 0;
+            Part part[MAX_PARTS];
+        };
+
+        void drawParts(LGFX_Sprite &spr, const Parts &p, float angle) {
+            for (int i = 0; i < p.count; i++) drawShape(spr, p.part[i].shape, angle, p.part[i].color);
+        }
+
+        // ---- time ----
+        // The clock's time: local to tz ("" for the board's own timezone),
+        // with the millisecond for a sweeping second hand. One reading of
+        // the clock, so the second and the millisecond agree.
+        struct Now {
+            struct tm t;
+            uint32_t ms;
+            time_t utc;
+        };
+
+        bool clockNow(const char *tz, Now &n) {
+            if (!timekeeper::isSet()) return false;
+            struct timeval tv;
+            gettimeofday(&tv, nullptr);
+            n.ms = tv.tv_usec / 1000;
+            n.utc = tv.tv_sec;
+            if (*tz) return timekeeper::localIn(tz, n.utc, n.t);
+            localtime_r(&n.utc, &n.t);
+            return true;
+        }
+
         // Where the hands point, in degrees clockwise from 12 o'clock.
         struct Angles {
             float hour, minute, second;
         };
 
-        bool angles(Angles &a) {
-            struct tm t;
-            if (!timekeeper::now(t)) return false;
-            a.second = t.tm_sec * 6.0f;
-            a.minute = t.tm_min * 6.0f + t.tm_sec * 0.1f;
-            a.hour = (t.tm_hour % 12) * 30.0f + t.tm_min * 0.5f;
-            return true;
+        Angles anglesAt(const Now &n, bool sweep) {
+            const float sec = n.t.tm_sec + (sweep ? n.ms / 1000.0f : 0);
+            return {(n.t.tm_hour % 12) * 30.0f + n.t.tm_min * 0.5f + sec / 120.0f, n.t.tm_min * 6.0f + sec * 0.1f, sec * 6.0f};
+        }
+
+        // The second zone's hand goes round once a day.
+        float zoneAngle(const struct tm &t) { return (t.tm_hour + t.tm_min / 60.0f) * 15.0f; }
+
+        // "America/New_York" -> "NEW YORK", "UTC" -> "UTC".
+        String zoneName(const String &tz) {
+            String name = tz.substring(tz.lastIndexOf('/') + 1);
+            name.replace('_', ' ');
+            name.toUpperCase();
+            return name;
+        }
+
+        const char *const WEEKDAYS[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+
+        // ---- what's written on the dial ----
+        // Positions in pixels of the 240x240 picture (the middle of the text
+        // or window), sizes as the font's pixel size.
+        struct TextSpot {
+            bool on = false;
+            int16_t x = CENTRE, y = CENTRE;
+            uint8_t px = 12;
+            uint16_t color = 0xFFFF;
+        };
+        struct DateWindow {
+            TextSpot text;
+            uint8_t w = 30, h = 22;
+            bool filled = false, bordered = false;
+            uint16_t background = 0, border = 0;
+        };
+
+        // The second zone's hand and name where a clock face doesn't give
+        // its own: an orange arrow on a 24-hour scale (the mockup's).
+        constexpr uint16_t ZONE_COLOR = rgb(0xd97757);
+        Parts defaultZoneHand() {
+            Parts p;
+            p.part[p.count++] = {bar(0, 92, 1.0f), ZONE_COLOR};
+            p.part[p.count++] = {arrow(90, 104, 6), ZONE_COLOR};
+            return p;
+        }
+        const Parts DEFAULT_ZONE_HAND = defaultZoneHand();
+        TextSpot defaultZoneLabel() {
+            TextSpot s;
+            s.on = true;
+            s.y = 170;
+            s.px = 11;
+            s.color = ZONE_COLOR;
+            return s;
+        }
+        const TextSpot DEFAULT_ZONE_LABEL = defaultZoneLabel();
+
+    }
+
+    // What the extras show today: part of the layer's key, so the layer is
+    // repainted when the day changes (or the second zone's name).
+    struct AnalogClockControl::Extras {
+        bool timeSet = false;
+        Now now{};
+        String zoneLabel; // "" for no second zone
+    };
+
+    namespace {
+        using Extras = AnalogClockControl::Extras;
+
+        String extrasKey(const Extras &e) {
+            String k = e.zoneLabel;
+            if (e.timeSet) {
+                k += '|';
+                k += e.now.t.tm_mday;
+                k += e.now.t.tm_wday;
+            }
+            return k;
+        }
+
+        void paintExtras(LGFX_Sprite &spr, const Extras &e, const DateWindow &date, const TextSpot &weekday,
+                         const TextSpot &zoneLabel) {
+            if (e.timeSet && date.text.on) {
+                const int x = date.text.x - date.w / 2, y = date.text.y - date.h / 2;
+                if (date.filled) spr.fillRect(x, y, date.w, date.h, date.background);
+                if (date.bordered) spr.drawRect(x, y, date.w, date.h, date.border);
+                const String day(e.now.t.tm_mday);
+                if (date.filled)
+                    text::drawPx(spr, day, date.text.x, date.text.y, date.text.px, Align::MiddleCenter, date.text.color, date.background);
+                else
+                    text::drawOver(spr, day, date.text.x, date.text.y, date.text.px, Align::MiddleCenter, date.text.color);
+            }
+            if (e.timeSet && weekday.on)
+                text::drawOver(spr, WEEKDAYS[e.now.t.tm_wday], weekday.x, weekday.y, weekday.px, Align::MiddleCenter, weekday.color);
+            if (e.zoneLabel.length() && zoneLabel.on)
+                text::drawOver(spr, e.zoneLabel, zoneLabel.x, zoneLabel.y, zoneLabel.px, Align::MiddleCenter, zoneLabel.color);
         }
 
         // ---- built-in clock faces ----
@@ -109,6 +248,7 @@ namespace orbit {
             float hub;           // pixels; the centre cap
             bool secondColorHub; // the cap takes the second hand's colour
             float pin;           // pixels; a dark pin on the cap, 0 for none
+            bool weekday;        // the weekday under 12, in the dial's colour
         };
         struct Colors {
             uint16_t background, dial, hour, minute, second;
@@ -118,7 +258,7 @@ namespace orbit {
 
         // From docs/mockups/analog-clock.html. classic keeps the board's own
         // geometry (hands 55/85/95 px) and its colour params.
-        const ClockFace CLASSIC = {Dial::Classic, bar(0, 55, 1.0f), bar(0, 85, 0.75f), bar(0, 95, 0.5f), true, 4, false, 0};
+        const ClockFace CLASSIC = {Dial::Classic, bar(0, 55, 1.0f), bar(0, 85, 0.75f), bar(0, 95, 0.5f), true, 4, false, 0, false};
         const ClockFace PLATFORM = {Dial::Platform,
                                     baton(-14, 58, 9 * 0.55f, 9 * 0.4f),
                                     baton(-14, 88, 7 * 0.55f, 7 * 0.4f),
@@ -126,9 +266,17 @@ namespace orbit {
                                     true,
                                     5.5f,
                                     true,
-                                    2};
-        const ClockFace MINIMAL = {
-            Dial::Dots, baton(-14, 58, 9 * 0.55f, 9 * 0.4f), baton(-14, 88, 7 * 0.55f, 7 * 0.4f), Shape(), false, 5.5f, false, 2};
+                                    2,
+                                    false};
+        const ClockFace MINIMAL = {Dial::Dots,
+                                   baton(-14, 58, 9 * 0.55f, 9 * 0.4f),
+                                   baton(-14, 88, 7 * 0.55f, 7 * 0.4f),
+                                   Shape(),
+                                   false,
+                                   5.5f,
+                                   false,
+                                   2,
+                                   true};
 
         const ClockFace &clockFace(const char *name) {
             if (strcmp(name, "platform") == 0) return PLATFORM;
@@ -172,22 +320,7 @@ namespace orbit {
 
         // ---- clock face files ----
         constexpr size_t MAX_FILE = 256 * 1024; // a ~190 KB PNG, as base64
-        constexpr int MAX_PARTS = 4;            // shapes in one hand or the cap
         constexpr int HASH_DIGITS = 16;
-
-        // A shape of an uploaded clock face with its own colour.
-        struct Part {
-            Shape shape;
-            uint16_t color;
-        };
-        struct Parts {
-            uint8_t count = 0;
-            Part part[MAX_PARTS];
-        };
-
-        void drawParts(LGFX_Sprite &spr, const Parts &p, float angle) {
-            for (int i = 0; i < p.count; i++) drawShape(spr, p.part[i].shape, angle, p.part[i].color);
-        }
 
         String filePath(int screen) { return "/orbit-clockface" + String(screen) + ".json"; }
         String newPath(int screen) { return "/orbit-clockface" + String(screen) + ".new"; }
@@ -218,6 +351,12 @@ namespace orbit {
             if (!v.is<float>()) return false;
             out = v.as<float>();
             return isfinite(out) && fabsf(out) <= limit;
+        }
+
+        bool wholeNumber(JsonVariantConst v, int lo, int hi, int &out) {
+            if (!v.is<int>()) return false;
+            out = v.as<int>();
+            return out >= lo && out <= hi;
         }
 
         bool parseColor(JsonVariantConst v, uint16_t &out) {
@@ -292,6 +431,51 @@ namespace orbit {
             return true;
         }
 
+        // {"x": 120, "y": 72, "size": 14, "color": "#rrggbb"}; absent is off.
+        bool parseTextSpot(JsonVariantConst in, TextSpot &out, const String &where, String &error) {
+            out = TextSpot();
+            if (in.isNull()) return true;
+            int x, y, px;
+            if (!wholeNumber(in["x"], 0, 239, x) || !wholeNumber(in["y"], 0, 239, y)) {
+                error = where + ".x and .y must be whole pixels, 0 to 239";
+                return false;
+            }
+            if (!wholeNumber(in["size"], 6, 48, px)) {
+                error = where + ".size must be 6 to 48 pixels";
+                return false;
+            }
+            if (!parseColor(in["color"], out.color)) {
+                error = where + ".color must be \"#rrggbb\"";
+                return false;
+            }
+            out.on = true;
+            out.x = x, out.y = y, out.px = px;
+            return true;
+        }
+
+        // A text spot plus the window's size and optional fill and border.
+        bool parseDateWindow(JsonVariantConst in, DateWindow &out, String &error) {
+            out = DateWindow();
+            if (!parseTextSpot(in, out.text, "date", error)) return false;
+            if (!out.text.on) return true;
+            int w = out.w, h = out.h;
+            if ((!in["width"].isNull() && !wholeNumber(in["width"], 8, 120, w)) ||
+                (!in["height"].isNull() && !wholeNumber(in["height"], 8, 120, h))) {
+                error = "date.width and .height must be 8 to 120 pixels";
+                return false;
+            }
+            out.w = w, out.h = h;
+            if (!in["background"].isNull() && !(out.filled = parseColor(in["background"], out.background))) {
+                error = "date.background must be \"#rrggbb\"";
+                return false;
+            }
+            if (!in["border"].isNull() && !(out.bordered = parseColor(in["border"], out.border))) {
+                error = "date.border must be \"#rrggbb\"";
+                return false;
+            }
+            return true;
+        }
+
         // The dial: a base64 240x240 PNG, decoded.
         std::shared_ptr<makapix::Artwork> decodeDial(JsonVariantConst in, String &error) {
             const char *b64 = in.as<const char *>();
@@ -330,14 +514,16 @@ namespace orbit {
     struct AnalogClockControl::FileFace {
         bool checked = false; // hash is known
         String hash;          // of the file held; "" for none
-        bool loaded = false;  // the hands below and the layer are from it
+        bool loaded = false;  // the parts below and the layer are from it
         bool failed = false;  // it couldn't be loaded; not tried again until a new upload
-        Parts hour, minute, second, cap;
+        Parts hour, minute, second, zone, cap;
+        DateWindow date;
+        TextSpot weekday, zoneLabel;
     };
 
     namespace {
-        // Everything in a clock face file but the dial: the hands and the cap.
-        bool parseHands(JsonDocument &doc, AnalogClockControl::FileFace &f, String &error) {
+        // Everything in a clock face file but the dial.
+        bool parseFace(JsonDocument &doc, AnalogClockControl::FileFace &f, String &error) {
             if ((doc["version"] | 0) != AnalogClockControl::FILE_VERSION) {
                 error = "version must be " + String(AnalogClockControl::FILE_VERSION);
                 return false;
@@ -348,10 +534,16 @@ namespace orbit {
                 return false;
             }
             JsonVariantConst hands = doc["hands"];
-            return parseParts(hands["hour"], f.hour, "hands.hour", true, error) &&
-                   parseParts(hands["minute"], f.minute, "hands.minute", true, error) &&
-                   parseParts(hands["second"], f.second, "hands.second", false, error) &&
-                   parseParts(doc["cap"], f.cap, "cap", false, error);
+            if (!parseParts(hands["hour"], f.hour, "hands.hour", true, error) ||
+                !parseParts(hands["minute"], f.minute, "hands.minute", true, error) ||
+                !parseParts(hands["second"], f.second, "hands.second", false, error) ||
+                !parseParts(hands["zone"], f.zone, "hands.zone", false, error) || !parseParts(doc["cap"], f.cap, "cap", false, error) ||
+                !parseDateWindow(doc["date"], f.date, error) || !parseTextSpot(doc["weekday"], f.weekday, "weekday", error) ||
+                !parseTextSpot(doc["zoneLabel"], f.zoneLabel, "zoneLabel", error))
+                return false;
+            if (!f.zone.count) f.zone = DEFAULT_ZONE_HAND;
+            if (!f.zoneLabel.on) f.zoneLabel = DEFAULT_ZONE_LABEL;
+            return true;
         }
     }
 
@@ -387,8 +579,8 @@ namespace orbit {
                 error = "malformed JSON body";
                 return 400;
             }
-            std::unique_ptr<FileFace> parsed(new FileFace()); // ~2.6 KB: not on the loop's stack
-            if (!parseHands(doc, *parsed, error) || !decodeDial(doc["dial"], error)) return 400;
+            std::unique_ptr<FileFace> parsed(new FileFace()); // several KB: not on the loop's stack
+            if (!parseFace(doc, *parsed, error) || !decodeDial(doc["dial"], error)) return 400;
             id = doc["id"] | "";
         }
         hash = hashOf((const uint8_t *) body.c_str(), body.length());
@@ -422,11 +614,13 @@ namespace orbit {
     }
 
     // Shows the uploaded clock face if the board holds the one asked for and
-    // it loads; otherwise the built-in one is shown.
-    bool AnalogClockControl::useFile(int screen, const char *wanted) {
+    // it loads; otherwise the built-in one is shown. The layer is the dial
+    // picture with the extras painted on, so it's read again from the file
+    // when they change (once a day).
+    bool AnalogClockControl::useFile(int screen, const char *wanted, const Extras &extras) {
         FileFace &f = file(screen);
         if (heldHash(screen) != wanted || f.failed || !ensureLayer(screen)) return false;
-        const String key = String("file|") + f.hash;
+        const String key = "file|" + f.hash + "|" + extrasKey(extras);
         if (f.loaded && layerKey[screen] == key) return true;
 
         String error;
@@ -439,18 +633,23 @@ namespace orbit {
             std::unique_ptr<FileFace> parsed(new FileFace());
             if (deserializeJson(doc, (const char *) data, length)) {
                 error = "unreadable JSON";
-            } else if (parseHands(doc, *parsed, error)) {
+            } else if (parseFace(doc, *parsed, error)) {
                 auto art = decodeDial(doc["dial"], error);
                 if (art) {
                     f.hour = parsed->hour;
                     f.minute = parsed->minute;
                     f.second = parsed->second;
+                    f.zone = parsed->zone;
                     f.cap = parsed->cap;
+                    f.date = parsed->date;
+                    f.weekday = parsed->weekday;
+                    f.zoneLabel = parsed->zoneLabel;
                     // The decoder's pixels are in native byte order; sprites
                     // hold them swapped.
                     const uint16_t *src = art->frames[0];
                     uint16_t *dst = (uint16_t *) layer[screen].getBuffer();
                     for (int i = 0; i < display::WIDTH * display::HEIGHT; i++) dst[i] = __builtin_bswap16(src[i]);
+                    paintExtras(layer[screen], extras, f.date, f.weekday, f.zoneLabel);
                 }
             }
             free(data);
@@ -469,6 +668,18 @@ namespace orbit {
 
     // ---- the control ----
 
+    namespace {
+        int optionalZone(JsonObjectConst in, JsonObject out, const char *key, String &error) {
+            if (int status = optionalString(in, out, key, "", 64, error)) return status;
+            const String tz = out[key].as<String>();
+            if (tz.length() && !timekeeper::validTimezone(tz)) {
+                error = String("params.") + key + " '" + tz + "' isn't a known timezone";
+                return 400;
+            }
+            return 0;
+        }
+    }
+
     int AnalogClockControl::parse(JsonObjectConst in, JsonObject out, String &error) const {
         int status;
         if ((status = optionalChoice(in, out, "clockFace", CLOCK_FACES, error))) return status;
@@ -477,6 +688,10 @@ namespace orbit {
         if ((status = optionalColor(in, out, "hourColor", TFT_WHITE, error))) return status;
         if ((status = optionalColor(in, out, "minuteColor", TFT_WHITE, error))) return status;
         if ((status = optionalColor(in, out, "secondColor", TFT_RED, error))) return status;
+        if ((status = optionalBool(in, out, "seconds", true, error))) return status;
+        if ((status = optionalChoice(in, out, "motion", MOTIONS, error))) return status;
+        if ((status = optionalZone(in, out, "timeZone", error))) return status;
+        if ((status = optionalZone(in, out, "zone2", error))) return status;
         if ((status = optionalString(in, out, "clockFaceId", "", 64, error))) return status;
         if ((status = optionalString(in, out, "clockFaceHash", "", HASH_DIGITS, error))) return status;
         for (const char *c = out["clockFaceHash"].as<const char *>(); *c; c++) {
@@ -494,16 +709,34 @@ namespace orbit {
         else params["clockFaceHeld"] = nullptr;
     }
 
-    void AnalogClockControl::draw(LGFX_Sprite &spr, JsonObjectConst p, const DrawContext &ctx) {
+    // About 10 fps while a second hand sweeps; once a second otherwise.
+    uint32_t AnalogClockControl::refreshMs(int screen, JsonObjectConst p) const {
+        if (!(p["seconds"] | true) || strcmp(p["motion"] | "tick", "sweep") != 0) return TICK_MS;
         const char *wanted = p["clockFaceHash"] | "";
-        if (*wanted && useFile(ctx.screen, wanted)) {
+        const FileFace *f = files[screen];
+        if (*wanted && f && f->loaded && f->hash == wanted) return f->second.count ? SWEEP_MS : TICK_MS;
+        return clockFace(p["clockFace"] | "classic").seconds ? SWEEP_MS : TICK_MS;
+    }
+
+    void AnalogClockControl::draw(LGFX_Sprite &spr, JsonObjectConst p, const DrawContext &ctx) {
+        const bool seconds = p["seconds"] | true, sweep = strcmp(p["motion"] | "tick", "sweep") == 0;
+        const String zone2 = p["zone2"] | "";
+        Extras extras;
+        extras.timeSet = clockNow(p["timeZone"] | "", extras.now);
+        struct tm zoneTime;
+        const bool zoneShown = zone2.length() && extras.timeSet && timekeeper::localIn(zone2, extras.now.utc, zoneTime);
+        if (zoneShown) extras.zoneLabel = zoneName(zone2);
+        const Angles a = anglesAt(extras.now, sweep);
+
+        const char *wanted = p["clockFaceHash"] | "";
+        if (*wanted && useFile(ctx.screen, wanted, extras)) {
             memcpy(spr.getBuffer(), layer[ctx.screen].getBuffer(), display::WIDTH * display::HEIGHT * 2);
+            if (!extras.timeSet) return; // just the dial until the clock is set
             const FileFace &f = file(ctx.screen);
-            Angles a;
-            if (!angles(a)) return; // just the dial until the clock is set
+            if (zoneShown) drawParts(spr, f.zone, zoneAngle(zoneTime));
             drawParts(spr, f.hour, a.hour);
             drawParts(spr, f.minute, a.minute);
-            drawParts(spr, f.second, a.second);
+            if (seconds) drawParts(spr, f.second, a.second);
             drawParts(spr, f.cap, 0);
             return;
         }
@@ -511,29 +744,42 @@ namespace orbit {
         const char *name = p["clockFace"] | "classic";
         const ClockFace &face = clockFace(name);
         const Colors c = colors(name, p);
+        TextSpot weekday;
+        if (face.weekday) {
+            weekday.on = true;
+            weekday.y = 72;
+            weekday.px = 14;
+            weekday.color = c.dial;
+        }
 
-        // What the layer holds: the clock face and its dial's colours.
+        // What the layer holds: the clock face, its dial's colours and the extras.
         String key = name;
         key += '|';
         key += c.background;
         key += '|';
         key += c.dial;
+        key += '|';
+        key += extrasKey(extras);
+        auto paint = [&](LGFX_Sprite &s) {
+            paintDial(s, face.dial, c);
+            paintExtras(s, extras, DateWindow(), weekday, DEFAULT_ZONE_LABEL);
+        };
         if (ensureLayer(ctx.screen)) {
             if (key != layerKey[ctx.screen]) {
-                paintDial(layer[ctx.screen], face.dial, c);
+                paint(layer[ctx.screen]);
                 layerKey[ctx.screen] = key;
             }
             memcpy(spr.getBuffer(), layer[ctx.screen].getBuffer(), display::WIDTH * display::HEIGHT * 2);
         } else {
-            paintDial(spr, face.dial, c); // no PSRAM for a layer: slower, same picture
+            paint(spr); // no PSRAM for a layer: slower, same picture
         }
 
-        Angles a;
-        if (!angles(a)) return; // just the dial until the clock is set
+        if (!extras.timeSet) return; // just the dial until the clock is set
+        if (zoneShown) drawParts(spr, DEFAULT_ZONE_HAND, zoneAngle(zoneTime));
         drawShape(spr, face.hour, a.hour, c.hour);
         drawShape(spr, face.minute, a.minute, c.minute);
-        if (face.seconds) drawShape(spr, face.second, a.second, c.second);
-        smooth::disc(spr, MID, MID, face.hub, face.secondColorHub && face.seconds ? c.second : c.hour);
+        if (face.seconds && seconds) drawShape(spr, face.second, a.second, c.second);
+        smooth::disc(spr, MID, MID, face.hub, face.secondColorHub && face.seconds && seconds ? c.second : c.hour);
         if (face.pin > 0) smooth::disc(spr, MID, MID, face.pin, PIN);
     }
 

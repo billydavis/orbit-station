@@ -21,6 +21,14 @@ namespace orbit {
     //                            second hand, on black.
     //   background (black), tickColor (white), hourColor (white),
     //   minuteColor (white), secondColor (red): classic's colours.
+    //   seconds (true)           show the second hand (if the clock face has one)
+    //   motion ("tick")          tick: the second hand jumps once a second.
+    //                            sweep: it moves smoothly (about 10 fps; costs
+    //                            drawing time on core 0).
+    //   timeZone ("")            the hands show this timezone (IANA name);
+    //                            "" for the board's own.
+    //   zone2 ("")               a second timezone: a hand going round once a
+    //                            day, and the city's name on the dial.
     //   clockFaceId ("")         the uploaded clock face's name, for clients.
     //   clockFaceHash ("")       show the uploaded clock face with this hash
     //                            (see below); "" for the built-in one.
@@ -42,7 +50,7 @@ namespace orbit {
         const char *name() const override { return "analogClock"; }
         int parse(JsonObjectConst params, JsonObject out, String &error) const override;
         void draw(LGFX_Sprite &spr, JsonObjectConst params, const DrawContext &ctx) override;
-        uint32_t refreshMs(int, JsonObjectConst) const override { return 1000; }
+        uint32_t refreshMs(int screen, JsonObjectConst params) const override;
         void report(int screen, JsonObject params) override;
 
         // Upload, in two halves. check() validates a clock face file and
@@ -53,8 +61,10 @@ namespace orbit {
         int check(int screen, const String &body, String &hash, String &id, String &error);
         int install(int screen, const String &hash, String &error);
 
-        // Per-screen state of uploaded clock faces; the hands live in the .cpp.
+        // Per-screen state of uploaded clock faces, and what the date,
+        // weekday and second zone show now; both live in the .cpp.
         struct FileFace;
+        struct Extras;
 
     private:
         // The parts that stay still (background and dial, or an uploaded
@@ -69,7 +79,7 @@ namespace orbit {
         bool ensureLayer(int screen);
         FileFace &file(int screen);
         const String &heldHash(int screen);
-        bool useFile(int screen, const char *wanted);
+        bool useFile(int screen, const char *wanted, const Extras &extras);
     };
 
 }

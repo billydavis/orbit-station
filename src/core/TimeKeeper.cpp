@@ -1,4 +1,5 @@
 #include "TimeKeeper.h"
+#include "PosixTz.h"
 #include <esp_sntp.h>
 
 extern const char zonesCsv[] asm("_binary_assets_zones_csv_start");
@@ -63,6 +64,48 @@ namespace timekeeper {
     }
 
     bool validTimezone(const String &tz) { return toPosix(tz).length() > 0; }
+
+    // ---- other zones ----
+    namespace {
+        // The last few zones asked for, so a clock drawing 10 times a second
+        // doesn't search the table each time. Only the render task asks.
+        struct Cached {
+            String name;
+            posixtz::Rule rule;
+            bool ok = false;
+        };
+        Cached cache[4];
+        int nextSlot = 0;
+
+        const Cached &ruleFor(const String &tz) {
+            for (const Cached &c : cache)
+                if (c.name.length() && c.name == tz) return c;
+            Cached &c = cache[nextSlot];
+            nextSlot = (nextSlot + 1) % 4;
+            c.name = tz;
+            const String rule = toPosix(tz);
+            c.ok = rule.length() && posixtz::parse(rule.c_str(), c.rule);
+            return c;
+        }
+    }
+
+    bool localIn(const String &tz, time_t t, struct tm &out) {
+        const Cached &c = ruleFor(tz);
+        if (!c.ok) return false;
+        const int32_t offset = posixtz::offsetAt(c.rule, t);
+        const time_t local = t - offset;
+        gmtime_r(&local, &out);
+        out.tm_isdst = c.rule.dst && offset != c.rule.stdOffset;
+        return true;
+    }
+
+    bool nowIn(const String &tz, struct tm &out, uint32_t *ms) {
+        if (!isSet()) return false;
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        if (ms) *ms = tv.tv_usec / 1000;
+        return localIn(tz, tv.tv_sec, out);
+    }
 
     void setTimezone(const String &tz) {
         String rule = toPosix(tz);

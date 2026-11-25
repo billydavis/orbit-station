@@ -20,4 +20,12 @@ namespace timekeeper {
     bool validTimezone(const String &tz);
     void setTimezone(const String &tz);
 
+    // Local time now in another timezone (IANA name or POSIX rule), worked
+    // out from its rule without changing the board's own (TZ is global, and
+    // other tasks read it). ms is the millisecond within the second. False
+    // if the clock isn't set or the zone is unknown.
+    bool nowIn(const String &tz, struct tm &out, uint32_t *ms = nullptr);
+    // The same for a given time; used by nowIn and the tests.
+    bool localIn(const String &tz, time_t t, struct tm &out);
+
 }

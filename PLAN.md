@@ -473,6 +473,27 @@ written only when it changes, like drawings:
    left by the corruption (LittleFS keeps its state in PSRAM); unproven.
 4. Date window, weekday, second time zone, sweep (~10 fps, costs core-0
    drawing time, not bus time).
+   Done, checked on the screens. Params `seconds`, `motion` (tick/sweep),
+   `timeZone`, `zone2` (settings); clock face files can add `date`,
+   `weekday`, `zoneLabel` and `hands.zone` (docs/clock-faces.md); minimal
+   shows the weekday. Date, weekday and zone name are painted into the
+   cached layer (its key holds the day and the name), so they cost nothing
+   per frame; an uploaded dial is read from its file again when they change
+   (once a day). Text over a picture goes through `text::drawOver` (drawn
+   white on black, green channel as alpha), since OpenFontRender blends
+   edges into one bg colour.
+   Other zones: `core/PosixTz.h` works a POSIX rule out without the global
+   TZ (other tasks read it). Checked on the PC (g++ against Python
+   zoneinfo, tzdata 2026f, every 15 min through 2026-27): 451 of 461 zones
+   match exactly. The other 10 are `zones.csv` being older than tzdata:
+   America/Vancouver, Edmonton, Winnipeg, Yellowknife, Inuvik, Rainy_River
+   (Canada's 2026 changes), Havana, Europe/Chisinau, Africa/Casablanca and
+   El_Aaiun (Ramadan switches POSIX can't express). The board's own zone
+   uses the same table; refreshing it is open.
+   Sweep on classic: 10 fps at 11-13 ms a frame, ~12% of core 0 (other
+   screens kept their rates); an uploaded face like Dress would be ~18-20%.
+   Most of that is copying the 115 KB layer (~5 ms); restoring only the
+   strips under the old hands (step 1's note) would cut it.
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
    a see-through overlay drawn over changing art (the one costly case).
 
