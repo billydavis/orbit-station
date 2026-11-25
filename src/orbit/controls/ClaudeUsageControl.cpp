@@ -1,11 +1,15 @@
 #include "ClaudeUsageControl.h"
 #include "core/TimeKeeper.h"
+#include "ui/Smooth.h"
 #include "ui/Text.h"
 #include <time.h>
 
 namespace orbit {
 
     namespace {
+        using smooth::blend;
+        using smooth::blend256;
+
         const char *const STYLES[] = {"pace", "orbit", "tanks", nullptr};
         const char *const LIVE[] = {"session", "week", "sessionResetsAt", "weekResetsAt"};
 
@@ -238,75 +242,6 @@ namespace orbit {
             y = CENTRE - lroundf(radius * cosf(a));
         }
 
-        // fg over bg, k from 0 (all bg) to 256 (all fg), both RGB565.
-        uint16_t blend256(uint16_t fg, uint16_t bg, int k) {
-            const int r = ((bg >> 11) * (256 - k) + (fg >> 11) * k) >> 8;
-            const int g = (((bg >> 5) & 63) * (256 - k) + ((fg >> 5) & 63) * k) >> 8;
-            const int b = ((bg & 31) * (256 - k) + (fg & 31) * k) >> 8;
-            return (r << 11) | (g << 5) | b;
-        }
-
-        // The same with a from 0 to 1. a is never negative here, so adding
-        // a half and truncating rounds it.
-        uint16_t blend(uint16_t fg, uint16_t bg, float a) { return blend256(fg, bg, (int) (a * 256 + 0.5f)); }
-
-        // Whether the point (dx, dy) from the centre is within a sweep of a
-        // radians clockwise from 12 o'clock (sinA and cosA are a's), without
-        // working out its angle. With u east and v north, the point's angle
-        // t is at most a when sin(a - t) = (sinA * v - cosA * u) / r is not
-        // negative, on the side of the circle the sweep is in.
-        bool withinSweep(int dx, int dy, float a, float sinA, float cosA) {
-            const float u = dx, v = -dy, side = sinA * v - cosA * u;
-            if (a <= PI) return u >= 0 && side >= 0; // the right half, up to the end
-            return u >= 0 || side >= 0;               // all but the left half past the end
-        }
-
-        // An anti-aliased arc round the centre, radius R and half a line's
-        // width thick, from 12 o'clock clockwise through sweep degrees, with
-        // round ends (360 or more is a whole ring). Each pixel's cover comes
-        // from its distance to the arc. Each row only visits the band the
-        // ring crosses (the whole square round it was ~54,000 pixels an arc,
-        // the band is ~4,000), and works on the sprite's buffer directly.
-        void smoothArc(LGFX_Sprite &spr, float R, float half, float sweep, uint16_t color) {
-            if (sweep <= 0) return;
-            const bool whole = sweep >= 360;
-            const float reach = half + 1.0f;
-            const float outer2 = (R + reach) * (R + reach), inner2 = R > reach ? (R - reach) * (R - reach) : 0;
-            const float a = sweep * DEG_TO_RAD, sinA = sinf(a), cosA = cosf(a);
-            const float endX = R * sinA, endY = -R * cosA; // the start is (0, -R)
-            const int span = ceilf(R + reach);
-            const int w = spr.width(), h = spr.height();
-            uint16_t *buf = (uint16_t *) spr.getBuffer(); // byte-swapped RGB565
-            for (int dy = -span; dy <= span; dy++) {
-                const int y = CENTRE + dy;
-                if (y < 0 || y >= h) continue;
-                // Pixels further out than edge are past the band's outer
-                // edge, and nearer the centre than skip inside its inner
-                // edge (each one pixel generous, so rounding can't lose any).
-                const float outside = outer2 - dy * dy, inside = inner2 - dy * dy;
-                if (outside < 0) continue;
-                const int edge = min(span, (int) sqrtf(outside) + 1);
-                const int skip = inside > 0 ? (int) sqrtf(inside) - 1 : 0;
-                for (int dx = -edge; dx <= edge; dx++) {
-                    if (dx > -skip && dx < skip) dx = skip;
-                    const int x = CENTRE + dx;
-                    if (x < 0 || x >= w) continue;
-                    const float d2 = dx * dx + dy * dy;
-                    if (d2 > outer2 || d2 < inner2) continue;
-                    float dist = fabsf(sqrtf(d2) - R);
-                    if (!whole && !withinSweep(dx, dy, a, sinA, cosA)) {
-                        // past either end: measure to the nearer round cap
-                        const float sy = dy + R, ex = dx - endX, ey = dy - endY;
-                        dist = sqrtf(fminf(dx * dx + sy * sy, ex * ex + ey * ey));
-                    }
-                    const float cover = half + 0.5f - dist;
-                    if (cover <= 0) continue;
-                    uint16_t &px = buf[y * w + x];
-                    px = __builtin_bswap16(cover >= 1 ? color : blend(color, __builtin_bswap16(px), cover));
-                }
-            }
-        }
-
         void paintOrbit(LGFX_Sprite &spr, const Orbit &o) {
             spr.fillScreen(BG);
             const int column[2] = {78, 162};
@@ -314,8 +249,8 @@ namespace orbit {
             for (int i = 0; i < 2; i++) {
                 const OrbitRing &r = o.rings[i];
                 const int R = RING_R[i];
-                smoothArc(spr, R, 1.5f, 360, TRACK);
-                if (r.known) smoothArc(spr, R, 2.5f, r.sweep, r.color);
+                smooth::arc(spr, CENTRE, CENTRE, R, 1.5f, 360, TRACK);
+                if (r.known) smooth::arc(spr, CENTRE, CENTRE, R, 2.5f, r.sweep, r.color);
                 text::draw(spr, r.percent, column[i], 132, 25, Align::MiddleCenter, r.color, BG);
                 text::draw(spr, label[i], column[i], 158, 8, Align::MiddleCenter, WHITE, BG);
                 if (r.note.length()) text::draw(spr, r.note, column[i], 175, 9, Align::MiddleCenter, MUTED, BG);
