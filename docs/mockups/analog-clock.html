@@ -1,0 +1,399 @@
+<title>Analog clock faces</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap">
+<style>
+/* Layout: a gallery of finished faces, then a builder with the preview beside its options. Same look as claude-monitor.html. */
+@font-face{font-family:OrbitRoboto;src:url(../../fonts/RobotoRegular.ttf)}
+:root{
+  color-scheme:dark;
+  --bg:#141311;--panel:#1e1c19;--raised:#2a2722;--line:#35312b;
+  --text:#f0eee6;--muted:#aaa397;--accent:#d97757;--on-accent:#1b1410;
+  --font:OrbitRoboto,Roboto,system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:1320px;margin:auto;padding-block:28px 56px;display:flex;flex-direction:column;gap:28px}
+h1{font-size:28px;font-weight:400;margin:0 0 6px;text-wrap:balance}
+h2{font-size:20px;font-weight:400;margin:0 0 4px;text-wrap:balance}
+h3{font-size:17px;font-weight:400;margin:0}
+.lede{color:var(--muted);margin:0;max-width:72ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+article{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
+.screen{width:252px;height:252px;max-width:100%;padding:6px;border-radius:50%;background:#050505;box-shadow:0 0 0 2px #38342e,0 8px 22px #0008;flex:none}
+canvas{display:block;width:240px;height:240px;border-radius:50%;image-rendering:pixelated}
+.card-text{align-self:stretch;display:flex;flex-direction:column;gap:4px}
+.card-text p{color:var(--muted);margin:0}
+.cost{align-self:stretch;margin-top:auto;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.card-actions{align-self:stretch;display:flex;justify-content:flex-end}
+button{font:inherit;color:var(--text);background:var(--raised);border:1px solid var(--line);border-radius:7px;padding:6px 11px;cursor:pointer}
+button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.builder{display:flex;flex-wrap:wrap;gap:24px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
+.preview{display:flex;flex-direction:column;align-items:center;gap:12px;flex:0 1 auto;min-width:0}
+.preview.zoom .screen{width:492px;height:492px}
+.preview.zoom canvas{width:480px;height:480px}
+.options{flex:1 1 420px;min-width:0;display:flex;flex-direction:column;gap:14px}
+.group{display:flex;flex-direction:column;gap:6px}
+.group-label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.swatches{display:flex;flex-wrap:wrap;gap:6px}
+.swatch{width:30px;height:30px;padding:0;border-radius:50%;border:2px solid var(--line)}
+.swatch[aria-pressed=true]{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}
+.colors{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label.range{display:flex;gap:10px;align-items:center;color:var(--muted)}
+label.range output{color:var(--text);min-width:4ch;font-variant-numeric:tabular-nums}
+input[type=range]{accent-color:var(--accent);width:160px;max-width:100%}
+pre{margin:0;background:#11100e;border:1px solid var(--line);border-radius:8px;padding:12px;font:12.5px/1.5 var(--mono);color:var(--text);overflow-x:auto}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.notes section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;min-width:0}
+.notes ul{margin:8px 0 0;padding-left:18px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.notes b{color:var(--text);font-weight:500}
+code{font-family:var(--mono);font-size:.92em}
+@media (max-width:560px){.preview.zoom .screen{width:252px;height:252px}.preview.zoom canvas{width:240px;height:240px}}
+</style>
+
+<main>
+<header>
+  <h1>Analog clock faces</h1>
+  <p class="lede">Ideas for the <code>analogClock</code> control, drawn at the real 240×240 size with the firmware's Roboto and the colours cut to RGB565 like the board. The pictures are generated stand-ins; on the board a background would be your own uploaded picture or a Makapix artwork. Pick a face to load it into the builder below.</p>
+</header>
+
+<section aria-labelledby="gallery-h">
+  <h2 id="gallery-h" hidden>Faces</h2>
+  <div class="grid" id="gallery"></div>
+</section>
+
+<section aria-labelledby="builder-h">
+  <h2 id="builder-h">Build a face</h2>
+  <p class="lede" style="margin-bottom:14px">Every option combines with every other. The params underneath are what the API would take, a proposal: none of them exist yet.</p>
+  <div class="builder">
+    <div class="preview" id="preview">
+      <div class="screen"><canvas id="big" width="240" height="240" aria-label="Clock preview"></canvas></div>
+      <button id="zoom" aria-pressed="false">Zoom 2×</button>
+    </div>
+    <div class="options" id="options"></div>
+  </div>
+</section>
+
+<section class="notes" aria-label="What the board needs">
+  <section>
+    <h3>Drawing it on the board</h3>
+    <ul>
+      <li><b>Smooth hands:</b> LovyanGFX 1.3 already has <code>drawWedgeLine</code> (tapered, anti-aliased, round ends), <code>drawSmoothLine</code> and <code>fillSmoothCircle</code>. Dauphine and sword shapes are filled triangles, whose edges come out a little harder than in this mockup.</li>
+      <li><b>Cached layer:</b> the background, dial and numerals change only when a setting does, so they go in a PSRAM layer like <code>claudeUsage</code>'s. A frame then copies the layer and draws three hands: an estimated 2–4 ms.</li>
+      <li><b>Sweep:</b> about 10 frames a second instead of 1. Only the tiles under the second hand change, so the bus barely notices, but core 0 draws it 10 times as often.</li>
+    </ul>
+  </section>
+  <section>
+    <h3>Pictures and saving</h3>
+    <ul>
+      <li><b>Your own picture:</b> a 240×240 JPEG posted to <code>/orbit/api/v1/screens/{n}/background</code>, kept in LittleFS (<code>/orbit-bg{n}.jpg</code>, typically 15–40 KB) and written only when it changes. It never goes in NVS.</li>
+      <li><b>Makapix art:</b> one artwork from a channel or post id, decoded by the existing Makapix code. It's a still behind the hands, and an animated one could play.</li>
+      <li><b>Everything is a setting:</b> nothing here is live data, so <code>stripLive()</code> has nothing to remove. The time zone for the second hand would be an IANA name, like <code>/api/v1/settings</code>.</li>
+    </ul>
+  </section>
+</section>
+</main>
+
+<script>
+(() => {
+const S = 240, C = 120, R = 110, PI = Math.PI;
+const FONT = 'OrbitRoboto, Roboto, sans-serif';
+const COLORS = {
+  black:'#000000', navy:'#0b1530', forest:'#0f2a1e', white:'#ffffff', cream:'#f3ead8',
+  gold:'#d8b46a', silver:'#c9ccd1', red:'#e8423a', orange:'#d97757', lume:'#b8f2c8', teal:'#4fd1c5', grey:'#6e6a64'
+};
+const OPTIONS = {
+  dial: {label:'Dial', values:['classic','track','arabic','roman','platform','dots','none']},
+  hands: {label:'Hands', values:['line','baton','dauphine','sword','skeleton']},
+  seconds: {label:'Second hand', values:['needle','lollipop','none']},
+  motion: {label:'Second hand moves', values:['tick','sweep']},
+  background: {label:'Background', values:['solid','gradient','picture','pixel art','night sky']},
+};
+const EXTRAS = [['date','Date window'],['day','Weekday'],['ring','Seconds ring'],['shadow','Hand shadows'],['zone','Second time zone']];
+const COLOR_KEYS = [['backgroundColor','Background'],['dialColor','Dial'],['handColor','Hands'],['secondColor','Second hand']];
+
+const PRESETS = [
+  {name:'Today', note:'What the board shows now: one-pixel hands, twelve ticks.', cost:'1 frame/s · ~1 ms',
+   o:{dial:'classic',hands:'line',seconds:'needle',motion:'tick',background:'solid',dim:0,extras:[],backgroundColor:'black',dialColor:'white',handColor:'white',secondColor:'red'}},
+  {name:'Dress', note:'Faceted dauphine hands and Roman numerals in gold over deep navy, with a date window.', cost:'1 frame/s · ~3 ms (cached dial)',
+   o:{dial:'roman',hands:'dauphine',seconds:'needle',motion:'tick',background:'gradient',dim:0,extras:['date'],backgroundColor:'navy',dialColor:'gold',handColor:'gold',secondColor:'cream'}},
+  {name:'Platform', note:'Bold bars and a red lollipop second hand that sweeps. Easy to read across a room.', cost:'10 frames/s sweep · ~3 ms',
+   o:{dial:'platform',hands:'baton',seconds:'lollipop',motion:'sweep',background:'solid',dim:0,extras:[],backgroundColor:'white',dialColor:'black',handColor:'black',secondColor:'red'}},
+  {name:'Minimal', note:'Twelve dots, two soft batons and no second hand. The weekday sits under twelve.', cost:'1 frame a minute is enough',
+   o:{dial:'dots',hands:'baton',seconds:'none',motion:'tick',background:'solid',dim:0,extras:['day'],backgroundColor:'black',dialColor:'grey',handColor:'cream',secondColor:'red'}},
+  {name:'Diver', note:'Minute track, outlined hands with lume, a seconds ring round the rim and the date.', cost:'1 frame/s · ~4 ms',
+   o:{dial:'track',hands:'skeleton',seconds:'needle',motion:'tick',background:'gradient',dim:0,extras:['ring','date'],backgroundColor:'forest',dialColor:'lume',handColor:'silver',secondColor:'orange'}},
+  {name:'Photo', note:'Your own picture behind the hands, dimmed a little, with shadows so the hands stand out.', cost:'JPEG in LittleFS · ~4 ms',
+   o:{dial:'dots',hands:'baton',seconds:'needle',motion:'tick',background:'picture',dim:25,extras:['shadow'],backgroundColor:'black',dialColor:'white',handColor:'white',secondColor:'orange'}},
+  {name:'Pixel', note:'A Makapix artwork as the dial, chunky pixels and all, with sword hands on top.', cost:'Makapix decode · ~4 ms',
+   o:{dial:'track',hands:'sword',seconds:'none',motion:'tick',background:'pixel art',dim:15,extras:['shadow'],backgroundColor:'black',dialColor:'cream',handColor:'cream',secondColor:'red'}},
+  {name:'Two zones', note:'A night sky, Arabic numerals and an arrow-tipped hand showing a second time zone on a 24-hour scale.', cost:'1 frame/s · ~4 ms',
+   o:{dial:'arabic',hands:'sword',seconds:'needle',motion:'sweep',background:'night sky',dim:0,extras:['zone','day'],backgroundColor:'black',dialColor:'silver',handColor:'white',secondColor:'teal'}},
+];
+
+// ---- geometry ----
+const rad = a => a * PI / 180;
+const pt = (a, r) => [C + r * Math.sin(rad(a)), C - r * Math.cos(rad(a))];
+const perp = (a, w) => [w * Math.cos(rad(a)), w * Math.sin(rad(a))];
+
+function poly(c, pts, fill) { c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fillStyle = fill; c.fill(); }
+function disc(c, x, y, r, fill) { c.beginPath(); c.arc(x, y, r, 0, 2 * PI); c.fillStyle = fill; c.fill(); }
+function line(c, a, r0, r1, w, color, cap = 'round') {
+  const [x0, y0] = pt(a, r0), [x1, y1] = pt(a, r1);
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.lineWidth = w; c.lineCap = cap; c.strokeStyle = color; c.stroke();
+}
+function wedge(c, a, r0, r1, w0, w1, color) { // like drawWedgeLine: tapered, round ends
+  const [x0, y0] = pt(a, r0), [x1, y1] = pt(a, r1), [p0x, p0y] = perp(a, w0), [p1x, p1y] = perp(a, w1);
+  poly(c, [[x0 + p0x, y0 + p0y], [x1 + p1x, y1 + p1y], [x1 - p1x, y1 - p1y], [x0 - p0x, y0 - p0y]], color);
+  disc(c, x0, y0, w0, color); disc(c, x1, y1, w1, color);
+}
+function shade(hex, k) { // k<1 darker, >1 lighter
+  const n = parseInt(hex.slice(1), 16), f = v => Math.max(0, Math.min(255, Math.round(k < 1 ? v * k : v + (255 - v) * (k - 1))));
+  return `rgb(${f(n >> 16)},${f(n >> 8 & 255)},${f(n & 255)})`;
+}
+function text(c, s, x, y, size, color) { c.font = `${size}px ${FONT}`; c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(s, x, y); }
+
+// ---- backgrounds (generated stand-ins for pictures) ----
+function seeded(seed) { return () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296; }
+const PICTURES = {};
+function makePicture(name) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d'), rnd = seeded(name.length * 977);
+  if (name === 'picture') { // dusk over hills
+    const g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, '#16223f'); g.addColorStop(.5, '#7c4a6b'); g.addColorStop(.72, '#e07f55'); g.addColorStop(1, '#f6c27a');
+    c.fillStyle = g; c.fillRect(0, 0, S, S); disc(c, 158, 150, 24, '#ffd9a0');
+    [['#5a3550', 150, 18], ['#3b2440', 172, 26], ['#22162a', 196, 34]].forEach(([col, base, amp], i) => {
+      c.beginPath(); c.moveTo(0, S);
+      for (let x = 0; x <= S; x += 6) c.lineTo(x, base - amp * (0.5 + 0.5 * Math.sin(x / (38 + i * 11) + i * 2)) - rnd() * 3);
+      c.lineTo(S, S); c.closePath(); c.fillStyle = col; c.fill();
+    });
+  } else if (name === 'pixel art') { // a 30x30 scene at 8x, as Makapix art would be scaled
+    const P = 8, N = 30, sky = ['#1d2b53', '#283a6b', '#35508a', '#4d6fa8', '#7393c4'];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      let col = sky[Math.min(4, Math.floor(y / 4))];
+      const peak = 14 + Math.round(5 * Math.abs(Math.sin(x / 4.2)) + 2 * Math.sin(x / 1.7));
+      if (y > peak) col = y - peak < 2 && peak < 17 ? '#e8eef2' : '#4b4a68';
+      if (y > 21) col = '#2f5d3a';
+      if (y > 24) col = '#244a2e';
+      if ((x - 21) ** 2 + (y - 6) ** 2 < 7) col = '#fff1c4';
+      if ([4, 9, 25].includes(x) && y > 17 && y < 22) col = '#5b3a29';
+      [[4, 16], [9, 15], [25, 16]].forEach(([tx, ty]) => { if (Math.abs(x - tx) + Math.abs(y - ty) < 3 && y < 19) col = '#1f6b3f'; });
+      if (rnd() < .02 && y < 10) col = '#ffffff';
+      c.fillStyle = col; c.fillRect(x * P, y * P, P, P);
+    }
+  } else { // night sky
+    c.fillStyle = '#05060d'; c.fillRect(0, 0, S, S);
+    [['#3b1f6b', 70, 80, 120], ['#0f4d5e', 170, 160, 110], ['#6b1f4f', 150, 60, 80]].forEach(([col, x, y, r]) => {
+      const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col + 'cc'); g.addColorStop(1, col + '00'); c.fillStyle = g; c.fillRect(0, 0, S, S);
+    });
+    for (let i = 0; i < 230; i++) { const r = rnd() < .08 ? 1.3 : .6; c.globalAlpha = .4 + rnd() * .6; disc(c, rnd() * S, rnd() * S, r, '#ffffff'); }
+    c.globalAlpha = 1;
+  }
+  return cv;
+}
+function background(c, o) {
+  const base = COLORS[o.backgroundColor];
+  if (o.background === 'solid') { c.fillStyle = base; c.fillRect(0, 0, S, S); }
+  else if (o.background === 'gradient') {
+    const g = c.createRadialGradient(C, C * .8, 10, C, C, 130); g.addColorStop(0, shade(base === '#000000' ? '#26221d' : base, 1.35)); g.addColorStop(1, base);
+    c.fillStyle = g; c.fillRect(0, 0, S, S);
+  } else {
+    c.drawImage(PICTURES[o.background] ||= makePicture(o.background), 0, 0);
+  }
+  if (o.dim) { c.fillStyle = `rgba(0,0,0,${o.dim / 100})`; c.fillRect(0, 0, S, S); }
+}
+
+// ---- dials ----
+const ROMAN = ['XII', 'I', 'II', 'III', 'IIII', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+function dial(c, o) {
+  const col = COLORS[o.dialColor];
+  switch (o.dial) {
+    case 'classic':
+      c.beginPath(); c.arc(C, C, R, 0, 2 * PI); c.lineWidth = 1; c.strokeStyle = col; c.stroke();
+      for (let i = 0; i < 12; i++) line(c, i * 30, R - 10, R, 1, col, 'butt');
+      break;
+    case 'track':
+      for (let i = 0; i < 60; i++) i % 5 ? line(c, i * 6, 102, 109, 1.2, col, 'butt') : line(c, i * 6, 92, 109, i % 15 ? 3 : 5, col, 'butt');
+      break;
+    case 'arabic':
+      for (let i = 0; i < 60; i++) if (i % 5) { const [x, y] = pt(i * 6, 106); disc(c, x, y, 1, col); }
+      for (let i = 0; i < 12; i++) { const [x, y] = pt(i * 30, 88); text(c, String(i || 12), x, y + 1, i % 3 ? 18 : 24, col); }
+      break;
+    case 'roman':
+      c.beginPath(); c.arc(C, C, 104, 0, 2 * PI); c.lineWidth = 1; c.strokeStyle = col; c.stroke();
+      for (let i = 0; i < 60; i++) line(c, i * 6, 100, 104, i % 5 ? 1 : 2, col, 'butt');
+      for (let i = 0; i < 12; i++) { const [x, y] = pt(i * 30, 84); text(c, ROMAN[i], x, y + 1, i % 3 ? 15 : 18, col); }
+      break;
+    case 'platform':
+      for (let i = 0; i < 60; i++) i % 5 ? line(c, i * 6, 99, 108, 2.5, col, 'butt') : line(c, i * 6, 78, 108, 7, col, 'butt');
+      break;
+    case 'dots':
+      for (let i = 0; i < 12; i++) { const [x, y] = pt(i * 30, 100); disc(c, x, y, i % 3 ? 3 : 5.5, col); }
+      break;
+  }
+}
+
+// ---- hands ----
+function hand(c, style, a, len, width, color) {
+  switch (style) {
+    case 'line': line(c, a, 0, len, 1, color, 'butt'); break;
+    case 'baton': wedge(c, a, -14, len, width * .55, width * .4, color); break;
+    case 'dauphine': {
+      const tip = pt(a, len), tail = pt(a, -12), [bx, by] = pt(a, len * .1), [px, py] = perp(a, width * .85);
+      poly(c, [tail, [bx + px, by + py], tip], shade(color, 1.18)); poly(c, [tail, [bx - px, by - py], tip], shade(color, .62));
+      break;
+    }
+    case 'sword': {
+      const tip = pt(a, len), [mx, my] = pt(a, len * .72), [bx, by] = pt(a, -10), [px, py] = perp(a, width * .55), [qx, qy] = perp(a, width * .2);
+      poly(c, [[bx + qx, by + qy], [mx + px, my + py], tip, [mx - px, my - py], [bx - qx, by - qy]], color);
+      break;
+    }
+    case 'skeleton': {
+      wedge(c, a, -12, len, width * .55, width * .55, color);
+      wedge(c, a, len * .3, len - 3, width * .32, width * .32, COLORS.lume);
+      break;
+    }
+  }
+}
+function secondHand(c, o, a) {
+  const col = COLORS[o.secondColor];
+  if (o.seconds === 'needle') { line(c, a, -24, 100, 1.6, col, 'butt'); disc(c, ...pt(a, -24), 3, col); }
+  else if (o.seconds === 'lollipop') { line(c, a, -26, 74, 2.4, col, 'butt'); disc(c, ...pt(a, 74), 8.5, col); }
+}
+function zoneHand(c, a) {
+  const col = COLORS.orange; line(c, a, 0, 92, 2, col, 'butt');
+  const tip = pt(a, 104), [bx, by] = pt(a, 90), [px, py] = perp(a, 6); poly(c, [tip, [bx + px, by + py], [bx - px, by - py]], col);
+}
+
+// ---- one face ----
+const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+function drawFace(cv, o, now) {
+  const c = cv.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, S, S);
+  background(c, o); dial(c, o);
+  const ms = now.getMilliseconds(), sec = now.getSeconds() + (o.motion === 'sweep' ? ms / 1000 : 0);
+  const min = now.getMinutes() + now.getSeconds() / 60, hr = now.getHours() % 12 + min / 60;
+  const dc = COLORS[o.dialColor], ex = new Set(o.extras);
+  if (ex.has('ring')) { c.beginPath(); c.arc(C, C, 116, rad(-90), rad(sec * 6 - 90)); c.lineWidth = 3; c.lineCap = 'butt'; c.strokeStyle = COLORS[o.secondColor]; c.stroke(); }
+  if (ex.has('date')) {
+    const x = o.dial === 'arabic' || o.dial === 'roman' ? 160 : 168;
+    c.fillStyle = '#f5f2ea'; c.fillRect(x, 109, 30, 22); c.strokeStyle = dc; c.lineWidth = 1; c.strokeRect(x + .5, 109.5, 29, 21);
+    text(c, String(now.getDate()), x + 15, 121, 15, '#111111');
+  }
+  if (ex.has('day')) text(c, DAYS[now.getDay()], C, 72, 14, dc);
+  if (ex.has('zone')) { // UTC on a 24-hour scale
+    const z = now.getUTCHours() + now.getUTCMinutes() / 60; zoneHand(c, z * 15);
+    text(c, 'UTC', C, 170, 11, COLORS.orange);
+  }
+  const hc = COLORS[o.handColor], hands = () => {
+    hand(c, o.hands, hr * 30, 58, 9, hc); hand(c, o.hands, min * 6, 88, 7, hc);
+  };
+  if (ex.has('shadow')) {
+    c.save(); c.translate(2, 3); c.globalAlpha = .45;
+    const keep = {...o}; hand(c, o.hands, hr * 30, 58, 9, '#000000'); hand(c, o.hands, min * 6, 88, 7, '#000000');
+    if (o.seconds !== 'none') secondHand(c, {...keep, secondColor: 'black'}, sec * 6);
+    c.restore();
+  }
+  hands();
+  if (o.seconds !== 'none') secondHand(c, o, sec * 6);
+  disc(c, C, C, o.hands === 'line' ? 4 : 5.5, o.seconds !== 'none' ? COLORS[o.secondColor] : hc);
+  if (o.hands !== 'line') disc(c, C, C, 2, '#111111');
+  // RGB565, like the board
+  const img = c.getImageData(0, 0, S, S), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] &= 0xF8; d[i + 1] &= 0xFC; d[i + 2] &= 0xF8; }
+  c.putImageData(img, 0, 0);
+}
+
+// ---- gallery ----
+const gallery = document.getElementById('gallery'), faces = [];
+PRESETS.forEach((p, i) => {
+  const a = document.createElement('article');
+  a.innerHTML = `<div class="screen"><canvas width="240" height="240" aria-label="${p.name} clock face"></canvas></div>
+    <div class="card-text"><h3>${p.name}</h3><p>${p.note}</p></div>
+    <div class="cost">${p.cost}</div>
+    <div class="card-actions"><button type="button" id="edit-${i}">Load into builder</button></div>`;
+  gallery.append(a);
+  faces.push({cv: a.querySelector('canvas'), o: p.o});
+  a.querySelector('button').addEventListener('click', () => {
+    state = JSON.parse(JSON.stringify(p.o)); renderOptions();
+    document.getElementById('builder-h').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  });
+});
+
+// ---- builder ----
+let state = JSON.parse(JSON.stringify(PRESETS[1].o));
+const optionsEl = document.getElementById('options'), big = document.getElementById('big');
+function chipGroup(key, label, values, isOn, onClick) {
+  const g = document.createElement('div'); g.className = 'group';
+  g.innerHTML = `<div class="group-label" id="lbl-${key}">${label}</div><div class="chips" role="group" aria-labelledby="lbl-${key}"></div>`;
+  const row = g.lastChild;
+  values.forEach(([v, text]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.id = `opt-${key}-${v.replace(/\s/g, '-')}`; b.textContent = text;
+    b.setAttribute('aria-pressed', isOn(v)); b.addEventListener('click', () => { onClick(v); renderOptions(); }); row.append(b);
+  });
+  return g;
+}
+function renderOptions() {
+  optionsEl.replaceChildren();
+  for (const [key, {label, values}] of Object.entries(OPTIONS))
+    optionsEl.append(chipGroup(key, label, values.map(v => [v, v[0].toUpperCase() + v.slice(1)]), v => state[key] === v, v => state[key] = v));
+  optionsEl.append(chipGroup('extras', 'Extras', EXTRAS, v => state.extras.includes(v),
+    v => state.extras = state.extras.includes(v) ? state.extras.filter(e => e !== v) : [...state.extras, v]));
+  const colors = document.createElement('div'); colors.className = 'colors';
+  COLOR_KEYS.forEach(([key, label]) => {
+    const g = document.createElement('div'); g.className = 'group';
+    g.innerHTML = `<div class="group-label" id="lbl-${key}">${label}</div><div class="swatches" role="group" aria-labelledby="lbl-${key}"></div>`;
+    Object.entries(COLORS).forEach(([name, hex]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'swatch'; b.id = `sw-${key}-${name}`;
+      b.style.background = hex; b.title = name; b.setAttribute('aria-label', `${label}: ${name}`); b.setAttribute('aria-pressed', state[key] === name);
+      b.addEventListener('click', () => { state[key] = name; renderOptions(); }); g.lastChild.append(b);
+    });
+    colors.append(g);
+  });
+  optionsEl.append(colors);
+  const dim = document.createElement('label'); dim.className = 'range';
+  dim.innerHTML = `Dim the background <input id="dim" type="range" min="0" max="60" step="5" value="${state.dim}"><output>${state.dim}%</output>`;
+  dim.querySelector('input').addEventListener('input', e => { state.dim = +e.target.value; dim.querySelector('output').textContent = state.dim + '%'; showParams(); });
+  optionsEl.append(dim);
+  const pre = document.createElement('pre'); pre.id = 'params'; optionsEl.append(pre);
+  showParams();
+}
+function showParams() {
+  const p = {dial: state.dial, hands: state.hands, seconds: state.seconds, motion: state.motion, background: state.background};
+  if (state.background === 'solid' || state.background === 'gradient') p.backgroundColor = state.backgroundColor;
+  if (state.background === 'picture') p.background = 'image';
+  if (state.background === 'pixel art' || state.background === 'night sky') { p.background = 'makapix'; p.channel = 'promoted'; }
+  if (state.dim) p.dim = state.dim;
+  Object.assign(p, {dialColor: state.dialColor, handColor: state.handColor, secondColor: state.secondColor});
+  if (state.extras.length) p.extras = state.extras;
+  if (state.extras.includes('zone')) p.secondZone = 'Etc/UTC';
+  document.getElementById('params').textContent =
+    `POST /orbit/api/v1/screens/2\n` + JSON.stringify({control: 'analogClock', params: p}, null, 2) +
+    (p.background === 'image' ? `\n\nPOST /orbit/api/v1/screens/2/background\nContent-Type: image/jpeg   (240×240, saved to LittleFS)` : '');
+}
+const zoomBtn = document.getElementById('zoom');
+zoomBtn.addEventListener('click', () => {
+  const on = zoomBtn.getAttribute('aria-pressed') !== 'true';
+  zoomBtn.setAttribute('aria-pressed', on); document.getElementById('preview').classList.toggle('zoom', on);
+});
+renderOptions();
+
+// ---- clock ----
+let lastSecond = -1, lastSweep = 0;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function frame(t) {
+  const now = new Date(), s = now.getSeconds(), newSecond = s !== lastSecond, sweepDue = !reduce && t - lastSweep > 90;
+  if (sweepDue) lastSweep = t;
+  faces.forEach(f => { if (newSecond || (sweepDue && f.o.motion === 'sweep')) drawFace(f.cv, f.o, now); });
+  drawFace(big, state, now);
+  lastSecond = s;
+  requestAnimationFrame(frame);
+}
+(document.fonts ? Promise.race([document.fonts.load(`20px ${FONT}`), new Promise(r => setTimeout(r, 1500))]) : Promise.resolve())
+  .finally(() => requestAnimationFrame(frame));
+})();
+</script>

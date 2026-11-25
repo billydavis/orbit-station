@@ -332,6 +332,97 @@ orbit and twin tanks.
    lock would also need care, since four controls keep state that `applied()`
    (API) changes and `draw()` (renderer) reads. If the 170 ms ever matters,
    the fix is in claudeUsage's repaint, not the lock.
+4. **claudeUsage layer repaint** (measured, not started): a `tanks`
+   repaint costs 110-170 ms, and the other screens freeze for 2-3 frames
+   while it runs. It happens on every reading change and also **every
+   minute**, since the countdown note is part of the layer's key (the week's
+   note changes hourly). Timed on the board (9 repaints): clearing 3-6 ms;
+   text 38-68 ms, 5-15 ms a string, even the fixed `SESSION` and `WEEK`
+   every time (the glyph cache is only 8 KB, `setCacheSize(128, 128, 8192)`
+   in `ui/Text.cpp`, and `text::draw` lays each string out twice: once to
+   measure it, once to draw it); pixel pass 59-72 ms (`tankPixel()` on all
+   57,600 pixels, 2-3 `blend()`s each with a `lroundf()` call, `sqrtf` near
+   the logo, though nearly every pixel is plain background or liquid).
+   Fixes, cheapest first:
+   1. Pixel pass: fill each row's runs of plain background and liquid
+      directly, and blend only near the surface, the disc's edge and text;
+      integer rounding in `blend()`. Expected ~60 → 5-10 ms; also speeds up
+      the ripple drawn every frame.
+   2. Raise the glyph cache to about 64 KB (PSRAM). Helps every control's
+      text.
+   3. When only the countdown note changed, repaint just its area
+      (~70x16 px) instead of the whole layer, keeping the text mask right.
+   Do 1 and 2, measure, then decide on 3. `pace` and `orbit` have the same
+   text cost and every-minute repaint; `orbit` also draws its anti-aliased
+   rings pixel by pixel.
+
+### Analog clock faces (planned, not started)
+
+Designs: `docs/mockups/analog-clock.html` (eight finished faces and a
+builder). Today the clock is a 1 px circle, 12 ticks and three `drawLine`
+hands, with five colour params.
+
+**The split.** Command Center designs faces; the board stores them and
+draws whatever moves. Design work moves off the board, so a new dial or
+hand style needs no firmware change, and the firmware stays small.
+
+- **Board (this repo):** keeps time and turns the hands, draws the date
+  window, weekday, second hand (tick or sweep) and second time zone, and
+  runs with Command Center closed. It never acts on a face's name.
+- **Command Center:** draws everything that stays still (background,
+  photo, gradient, numerals in any font, ticks) into one 240x240 picture,
+  and describes each hand as outline points. A face is saved there by
+  name, outside the board's NVS.
+
+**Face file**, one per screen in LittleFS (`/orbit-face{n}`), written only
+when it changes, like drawings:
+- the dial picture as PNG (decoder already in the firmware; thin lines
+  stay sharp, where JPEG would blur them);
+- JSON for the moving parts: per hand (hour, minute, second, zone) a list
+  of outline points in a unit system (0 = centre, 1 = face radius, up to
+  ~16 points), fill colour, optional outline/lume colour; centre cap;
+  second hand style; date/weekday position, font size and colours.
+  About 100-150 bytes a hand, which is why it lives in the file, not NVS.
+
+**API (proposal):**
+- `PUT /orbit/api/v1/screens/{n}/face`: picture plus JSON. Stored, then
+  the screen's control params get `faceId` and `faceHash` (settings,
+  saved).
+- The screen's state reports the hash of the file the board actually holds,
+  so Command Center can see a wiped or reflashed board and push the face
+  again.
+- Per-screen quick options stay plain params: `seconds` (on/off),
+  `motion` (tick/sweep), `timeZone` / `zone2`.
+- Built-in faces by name (`face: "classic"` and two or three presets from
+  the mockup), so scripts and other orbit-api clients get a good clock
+  without uploading, and the board has a fallback if a file is missing.
+  The old colour params keep working for `classic`.
+
+**Board steps:**
+1. Cached PSRAM layer for the still parts (as claudeUsage does), filled
+   from the built-in face; frame = copy the layer + draw hands. Target
+   2-4 ms a frame. Replace `drawLine` hands with anti-aliased ones
+   (`drawWedgeLine`, `fillSmoothCircle`). Check on the screens.
+2. Polygon hands: rotate the outline points and fill with smooth edges
+   (LovyanGFX has no anti-aliased polygon fill, so our own scanline fill
+   with edge coverage). Built-in presets move to the same hand format.
+3. Face file and the upload endpoint: store, decode the PNG into the
+   layer, report the hash, fall back to the built-in face on a missing or
+   bad file. Check value-only updates don't save to NVS.
+4. Date window, weekday, second time zone, sweep (~10 fps, costs core-0
+   drawing time, not bus time).
+5. Later, only if wanted: Makapix art as the dial, which needs the dial as
+   a see-through overlay drawn over changing art (the one costly case).
+
+**Command Center (OrbIt-Command-Center, not this repo):**
+- A separate face builder page: large live preview, start from a preset,
+  duplicate and tweak, save by name, later import/export a face as a file.
+  The mockup's drawing code can carry over.
+- In the analog clock control: a face picker with thumbnails, the quick
+  options above, and an "Edit face" link to the builder.
+- Picking a face uploads it to that screen. Editing a face re-uploads it
+  to every screen using it (found by hash), and a board reporting a
+  different hash gets it pushed again.
 
 ## Open decisions
 
