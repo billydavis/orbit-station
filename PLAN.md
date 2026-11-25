@@ -437,6 +437,16 @@ written only when it changes, like drawings:
 2. Polygon hands: rotate the outline points and fill with smooth edges
    (LovyanGFX has no anti-aliased polygon fill, so our own scanline fill
    with edge coverage). Built-in presets move to the same hand format.
+   Done, checked on the screens: a hand is up to 16 outline points plus up
+   to two discs (round ends, lollipop), in face-radius units pointing at
+   12. `smooth::polygon` samples 16 sub-rows a pixel row with exact cover
+   across each (area within 0.007% on the PC); `smooth::disc` for discs.
+   `clockFace` param (setting): `classic` (the board's geometry, colour
+   params), `platform` and `minimal` from the mockup, with their own
+   colours. Frame: classic 8.6-10.4 ms, platform 14-16 ms (thick batons,
+   8.5 px lollipop), both copy ~5 ms of that. A screen POST replaces all
+   params, so a client switching clock face must send classic's colours
+   too, or they reset to defaults.
 3. Clock face file and the upload endpoint: store, decode the PNG into the
    layer, report the hash, fall back to the built-in clock face on a
    missing or bad file. Check value-only updates don't save to NVS.

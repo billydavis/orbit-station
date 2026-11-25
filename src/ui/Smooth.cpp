@@ -57,4 +57,92 @@ namespace smooth {
         }
     }
 
+    namespace {
+        // Sub-rows a pixel row is sampled at; across each sub-row the cover
+        // is exact. 16 gives near-horizontal edges 16 levels of shading.
+        constexpr int SUB = 16;
+
+        // The polygon's cover of each pixel on the row being filled, in
+        // internal RAM (the sprite's width at most).
+        float rowCover[320];
+
+        void addSpan(float xa, float xb, int w) {
+            xa = fmaxf(xa, 0);
+            xb = fminf(xb, (float) w);
+            if (xb <= xa) return;
+            const int ia = (int) xa, ib = (int) xb;
+            constexpr float k = 1.0f / SUB;
+            if (ia == ib) {
+                rowCover[ia] += (xb - xa) * k;
+                return;
+            }
+            rowCover[ia] += (ia + 1 - xa) * k;
+            for (int i = ia + 1; i < ib; i++) rowCover[i] += k;
+            if (ib < w) rowCover[ib] += (xb - ib) * k;
+        }
+    }
+
+    void polygon(LGFX_Sprite &spr, const float *xy, int n, uint16_t color) {
+        if (n < 3 || n > MAX_POINTS) return;
+        const int w = min(spr.width(), (int) (sizeof rowCover / sizeof rowCover[0])), h = spr.height();
+        float minX = xy[0], maxX = xy[0], minY = xy[1], maxY = xy[1];
+        for (int i = 1; i < n; i++) {
+            minX = fminf(minX, xy[2 * i]), maxX = fmaxf(maxX, xy[2 * i]);
+            minY = fminf(minY, xy[2 * i + 1]), maxY = fmaxf(maxY, xy[2 * i + 1]);
+        }
+        const int x0 = max(0, (int) floorf(minX)), x1 = min(w - 1, (int) floorf(maxX));
+        const int y0 = max(0, (int) floorf(minY)), y1 = min(h - 1, (int) floorf(maxY));
+        if (x0 > x1 || y0 > y1) return;
+        uint16_t *buf = (uint16_t *) spr.getBuffer(); // byte-swapped RGB565
+        float cross[MAX_POINTS];
+        for (int y = y0; y <= y1; y++) {
+            for (int x = x0; x <= x1; x++) rowCover[x] = 0;
+            for (int s = 0; s < SUB; s++) {
+                const float sy = y + (s + 0.5f) / SUB;
+                int found = 0;
+                for (int i = 0, j = n - 1; i < n; j = i++) {
+                    const float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
+                    if ((ay <= sy) != (by <= sy)) cross[found++] = ax + (sy - ay) * (bx - ax) / (by - ay);
+                }
+                // Few crossings: sort them by insertion.
+                for (int i = 1; i < found; i++) {
+                    const float v = cross[i];
+                    int j = i - 1;
+                    for (; j >= 0 && cross[j] > v; j--) cross[j + 1] = cross[j];
+                    cross[j + 1] = v;
+                }
+                for (int i = 0; i + 1 < found; i += 2) addSpan(cross[i], cross[i + 1], w);
+            }
+            uint16_t *line = buf + y * spr.width();
+            for (int x = x0; x <= x1; x++) {
+                const float cover = rowCover[x];
+                if (cover <= 0.002f) continue;
+                line[x] = __builtin_bswap16(cover >= 0.998f ? color : blend(color, __builtin_bswap16(line[x]), cover));
+            }
+        }
+    }
+
+    void disc(LGFX_Sprite &spr, float cx, float cy, float r, uint16_t color) {
+        if (r <= 0) return;
+        const int w = spr.width(), h = spr.height();
+        const int x0 = max(0, (int) floorf(cx - r - 1)), x1 = min(w - 1, (int) ceilf(cx + r + 1));
+        const int y0 = max(0, (int) floorf(cy - r - 1)), y1 = min(h - 1, (int) ceilf(cy + r + 1));
+        const float inner2 = r > 0.5f ? (r - 0.5f) * (r - 0.5f) : 0, outer2 = (r + 0.5f) * (r + 0.5f);
+        uint16_t *buf = (uint16_t *) spr.getBuffer();
+        for (int y = y0; y <= y1; y++) {
+            const float dy = y + 0.5f - cy;
+            for (int x = x0; x <= x1; x++) {
+                const float dx = x + 0.5f - cx, d2 = dx * dx + dy * dy;
+                if (d2 >= outer2) continue;
+                uint16_t &px = buf[y * w + x];
+                if (d2 <= inner2) {
+                    px = __builtin_bswap16(color);
+                    continue;
+                }
+                const float cover = r + 0.5f - sqrtf(d2);
+                px = __builtin_bswap16(blend(color, __builtin_bswap16(px), cover));
+            }
+        }
+    }
+
 }

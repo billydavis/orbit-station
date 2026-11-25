@@ -26,4 +26,16 @@ namespace smooth {
     // arc, blended over what's already there.
     void arc(LGFX_Sprite &spr, int cx, int cy, float R, float half, float sweep, uint16_t color);
 
+    // The polygons and discs below take positions in continuous pixel
+    // coordinates: pixel (x, y) covers x to x + 1 and y to y + 1, so its
+    // centre is (x + 0.5, y + 0.5).
+
+    // Fills a polygon of n points (x0, y0, x1, y1, ...), up to MAX_POINTS,
+    // with smooth edges. Inside is decided even-odd, so it may be concave.
+    constexpr int MAX_POINTS = 16;
+    void polygon(LGFX_Sprite &spr, const float *xy, int n, uint16_t color);
+
+    // A filled disc with a smooth edge.
+    void disc(LGFX_Sprite &spr, float cx, float cy, float r, uint16_t color);
+
 }
