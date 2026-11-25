@@ -23,6 +23,10 @@ namespace orbit {
     // Controls built into this firmware, for the capabilities endpoints.
     void listControls(JsonArray out);
 
+    // Mounts LittleFS (formatting it on first use) the first time it's
+    // needed, for files too big for NVS. False if it can't be mounted.
+    bool mountFiles();
+
     // Average time a frame of this screen took to draw since the last call, in
     // microseconds (for the serial frame report).
     uint32_t takeDrawUs(int screen);

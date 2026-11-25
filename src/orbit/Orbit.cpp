@@ -201,15 +201,6 @@ namespace orbit {
 
         String drawingPath(int screen) { return "/orbit-draw" + String(screen) + ".json"; }
 
-        bool mountFiles() {
-            if (!filesReady) {
-                // Formats the data partition on first use.
-                filesReady = LittleFS.begin(true);
-                if (!filesReady) Serial.println("OrbIt: couldn't mount LittleFS; drawings won't be saved");
-            }
-            return filesReady;
-        }
-
         // What a screen is saved as: its control, unless that's never saved
         // (countdown); then what it showed before.
         void savedConfig(int screen, int &control, JsonObjectConst &params) {
@@ -529,6 +520,48 @@ namespace orbit {
             sendJson(200, doc);
         }
 
+        // Stores a clock face file for a screen (see AnalogClockControl). If
+        // the screen shows the analog clock, it switches to the new clock
+        // face; otherwise a later write picks it with clockFaceHash.
+        void handlePutClockFace(int screen) {
+            if (!server->hasArg("plain")) {
+                sendError(400, "missing JSON body");
+                return;
+            }
+            String hash, id, error;
+            size_t bytes;
+            {
+                // Checked and written without the lock: decoding and writing
+                // flash take a while, and the screens keep drawing meanwhile.
+                const String body = server->arg("plain");
+                bytes = body.length();
+                if (int status = analogClockControl.check(screen, body, hash, id, error)) {
+                    sendError(status, error);
+                    return;
+                }
+            }
+            Lock lock;
+            if (int status = analogClockControl.install(screen, hash, error)) {
+                sendError(status, error);
+                return;
+            }
+            Slot &s = slots[screen];
+            JsonDocument doc;
+            const bool shown = CONTROLS[s.control] == &analogClockControl;
+            if (shown) {
+                s.params["clockFaceId"] = id;
+                s.params["clockFaceHash"] = hash;
+                s.updatedAt = millis();
+                s.dirty = true;
+                if (!persistLayout()) doc["warning"] = NOT_SAVED_WARNING;
+            }
+            doc["screen"] = screen;
+            doc["clockFaceHash"] = hash;
+            doc["bytes"] = bytes;
+            doc["shown"] = shown;
+            sendJson(200, doc);
+        }
+
         // Ticker screens only: fetch the price now, whatever the interval.
         void handleRefresh(int screen) {
             Lock lock;
@@ -577,6 +610,13 @@ namespace orbit {
             for (int i = 0; ScreensaverControl::EFFECTS[i]; i++) effects.add(ScreensaverControl::EFFECTS[i]);
             JsonArray transitions = doc["transitions"].to<JsonArray>();
             for (int i = 0; transition::CHOICES[i]; i++) transitions.add(transition::CHOICES[i]);
+            // Clock face files can be uploaded (PUT .../screens/{n}/clock-face)
+            // in this version of the file format; builtIn are the clockFace
+            // names.
+            JsonObject clockFaces = doc["clockFaces"].to<JsonObject>();
+            clockFaces["fileVersion"] = AnalogClockControl::FILE_VERSION;
+            JsonArray builtIn = clockFaces["builtIn"].to<JsonArray>();
+            for (int i = 0; AnalogClockControl::CLOCK_FACES[i]; i++) builtIn.add(AnalogClockControl::CLOCK_FACES[i]);
             doc["api"] = String(API_BASE) + "/screens";
             sendJson(200, doc);
         }
@@ -610,6 +650,7 @@ namespace orbit {
             s.on(uri, HTTP_GET, [i] { handleGetScreen(i); });
             s.on(uri, HTTP_POST, [i] { handlePostScreen(i); });
             s.on(uri + "/refresh", HTTP_POST, [i] { handleRefresh(i); });
+            s.on(uri + "/clock-face", HTTP_PUT, [i] { handlePutClockFace(i); });
         }
         s.on(String(API_BASE) + "/weather/preview", HTTP_POST, handleWeatherPreview);
         s.on(String(API_BASE) + "/capabilities", HTTP_GET, handleCapabilities);
@@ -622,6 +663,15 @@ namespace orbit {
     }
 
     void stallForTest() { stallRequested = true; }
+
+    bool mountFiles() {
+        if (!filesReady) {
+            // Formats the data partition on first use.
+            filesReady = LittleFS.begin(true);
+            if (!filesReady) Serial.println("OrbIt: couldn't mount LittleFS; drawings and clock faces won't be saved");
+        }
+        return filesReady;
+    }
 
     void listControls(JsonArray out) {
         for (Control *c : CONTROLS) out.add(c->name());

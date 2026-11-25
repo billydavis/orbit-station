@@ -7,10 +7,11 @@ namespace orbit {
 
     // An analog clock: a dial and hour, minute and second hands (hour and
     // minute move smoothly), drawn anti-aliased. Hands are outlines filled
-    // with smooth edges, the form clock face files will use.
+    // with smooth edges.
     //
     // params (all optional, all settings):
-    //   clockFace ("classic")    a built-in clock face:
+    //   clockFace ("classic")    a built-in clock face, also shown when an
+    //                            uploaded one is missing or doesn't match:
     //                            classic: circle, 12 ticks, thin hands (the
     //                            info-orbs geometry), coloured by the params
     //                            below.
@@ -20,22 +21,55 @@ namespace orbit {
     //                            second hand, on black.
     //   background (black), tickColor (white), hourColor (white),
     //   minuteColor (white), secondColor (red): classic's colours.
+    //   clockFaceId ("")         the uploaded clock face's name, for clients.
+    //   clockFaceHash ("")       show the uploaded clock face with this hash
+    //                            (see below); "" for the built-in one.
+    //
+    // GET also reports clockFaceHeld: the hash of the clock face file the
+    // board holds for this screen, or null. A client compares it with the
+    // hash it would upload and sends the file again if they differ.
+    //
+    // Clock face files (docs/clock-faces.md): PUT /screens/{n}/clock-face
+    // with a JSON body holding the dial as a base64 240x240 PNG and the hands
+    // as outlines. The board checks it and stores the body byte for byte in
+    // LittleFS (/orbit-clockface{n}.json), written only on upload. Its hash
+    // is the first 16 hex digits of the SHA-256 of the body.
     class AnalogClockControl : public Control {
     public:
+        static const char *const CLOCK_FACES[]; // built-in names, nullptr-terminated
+        static constexpr int FILE_VERSION = 1;
+
         const char *name() const override { return "analogClock"; }
         int parse(JsonObjectConst params, JsonObject out, String &error) const override;
         void draw(LGFX_Sprite &spr, JsonObjectConst params, const DrawContext &ctx) override;
         uint32_t refreshMs(int, JsonObjectConst) const override { return 1000; }
+        void report(int screen, JsonObject params) override;
+
+        // Upload, in two halves. check() validates a clock face file and
+        // writes it beside the real one; it's slow (decoding, writing flash),
+        // so call it without the layout lock. Then install() puts it in
+        // place, with the layout locked. Both return an HTTP status (0 when
+        // fine) and set error. hash is the file's, id its "id" ("" if none).
+        int check(int screen, const String &body, String &hash, String &id, String &error);
+        int install(int screen, const String &hash, String &error);
+
+        // Per-screen state of uploaded clock faces; the hands live in the .cpp.
+        struct FileFace;
 
     private:
-        // The parts that stay still (background and dial), kept in
-        // PSRAM (115 KB a screen, made the first time a screen shows a
-        // clock) and repainted only when their colours change. Each frame
-        // copies it and draws the hands on top.
+        // The parts that stay still (background and dial, or an uploaded
+        // dial picture), kept in PSRAM (115 KB a screen, made the first
+        // time a screen shows a clock) and repainted only when they change.
+        // Each frame copies it and draws the hands on top.
         LGFX_Sprite layer[display::NUM_SCREENS];
         String layerKey[display::NUM_SCREENS];
 
+        FileFace *files[display::NUM_SCREENS] = {};
+
         bool ensureLayer(int screen);
+        FileFace &file(int screen);
+        const String &heldHash(int screen);
+        bool useFile(int screen, const char *wanted);
     };
 
 }

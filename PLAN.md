@@ -450,6 +450,27 @@ written only when it changes, like drawings:
 3. Clock face file and the upload endpoint: store, decode the PNG into the
    layer, report the hash, fall back to the built-in clock face on a
    missing or bad file. Check value-only updates don't save to NVS.
+   Done, checked on the screens; format and API in `docs/clock-faces.md`.
+   JSON body with the dial as a base64 240x240 PNG (the WebServer turns a
+   raw body into a String, which stops at the first zero byte), stored
+   byte for byte as `/orbit-clockface{n}.json`; hash = first 16 hex digits
+   of its SHA-256, so Command Center can work it out itself. Checking and
+   writing happen without the layout lock (watchdog paused), then the file
+   is renamed into place with it. `clockFaceId`/`clockFaceHash` params
+   (settings) pick it; GET reports `clockFaceHeld`; capabilities list
+   `clockFaces`. The clock has no live values, so nothing to strip.
+   Tested: hash matches the PC's, nine kinds of bad file refused with the
+   stored file untouched, reloads after a restart. Test faces: the
+   mockup's Dress (37.5 KB body, ~18 ms a frame: four big dauphine
+   triangles) and Photo over the dusk scene (13 KB). Hand shadows can't be
+   see-through, so the Photo face uses thin dark outlines instead.
+   Bug found on the bench: re-parsing into the live hands kept the old
+   point counts and wrote past 16 points, corrupting PSRAM, so switching
+   clock face crashed 1-3 s after an upload (boot was fine). Fixed by
+   resetting each part and parsing into a fresh object. Once, the first
+   upload after flashing the fix hit a LittleFS assert closing the new
+   file; not seen again in 13 uploads over five restarts. Likely damage
+   left by the corruption (LittleFS keeps its state in PSRAM); unproven.
 4. Date window, weekday, second time zone, sweep (~10 fps, costs core-0
    drawing time, not bus time).
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
