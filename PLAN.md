@@ -353,8 +353,16 @@ orbit and twin tanks.
    (~84 KB).
    3. Repainting only the countdown note: not worth it at ~20 ms (one
       frame at most at 15 fps). Skipped.
-   Next: `orbit` still takes 70-80 ms a repaint, from `smoothArc()` drawing
-   its anti-aliased rings with `readPixel`/`drawPixel` per pixel.
+   4. `orbit` rings (done): `smoothArc()` took 70-80 ms a repaint, visiting
+      the whole square round each of its four arcs (~54,000 pixels) with
+      `readPixel`/`drawPixel`, plus `atan2f` per pixel and `hypotf` past
+      the ends. Each row now visits only the band the ring crosses (~4,000
+      pixels an arc) and writes the buffer directly; a cross-product test
+      replaces `atan2f` (checked on the PC against it on 5 million points:
+      only exact end-ray points differ, where both distances are equal),
+      and plain `sqrtf` the `hypotf`s. An `orbit` repaint is now 31-33 ms
+      (text ~6 ms, rings and clearing ~25 ms); 42-45 ms while the glyph
+      cache fills after boot.
 
 ### Analog clock faces (planned, not started)
 

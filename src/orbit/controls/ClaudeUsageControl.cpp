@@ -250,36 +250,59 @@ namespace orbit {
         // a half and truncating rounds it.
         uint16_t blend(uint16_t fg, uint16_t bg, float a) { return blend256(fg, bg, (int) (a * 256 + 0.5f)); }
 
+        // Whether the point (dx, dy) from the centre is within a sweep of a
+        // radians clockwise from 12 o'clock (sinA and cosA are a's), without
+        // working out its angle. With u east and v north, the point's angle
+        // t is at most a when sin(a - t) = (sinA * v - cosA * u) / r is not
+        // negative, on the side of the circle the sweep is in.
+        bool withinSweep(int dx, int dy, float a, float sinA, float cosA) {
+            const float u = dx, v = -dy, side = sinA * v - cosA * u;
+            if (a <= PI) return u >= 0 && side >= 0; // the right half, up to the end
+            return u >= 0 || side >= 0;               // all but the left half past the end
+        }
+
         // An anti-aliased arc round the centre, radius R and half a line's
         // width thick, from 12 o'clock clockwise through sweep degrees, with
         // round ends (360 or more is a whole ring). Each pixel's cover comes
-        // from its distance to the arc, so it's slow (a few ms); it only runs
-        // when the cached layer is repainted.
+        // from its distance to the arc. Each row only visits the band the
+        // ring crosses (the whole square round it was ~54,000 pixels an arc,
+        // the band is ~4,000), and works on the sprite's buffer directly.
         void smoothArc(LGFX_Sprite &spr, float R, float half, float sweep, uint16_t color) {
             if (sweep <= 0) return;
             const bool whole = sweep >= 360;
             const float reach = half + 1.0f;
             const float outer2 = (R + reach) * (R + reach), inner2 = R > reach ? (R - reach) * (R - reach) : 0;
-            const float a = sweep * DEG_TO_RAD;
-            const float endX = R * sinf(a), endY = -R * cosf(a); // the start is (0, -R)
+            const float a = sweep * DEG_TO_RAD, sinA = sinf(a), cosA = cosf(a);
+            const float endX = R * sinA, endY = -R * cosA; // the start is (0, -R)
             const int span = ceilf(R + reach);
+            const int w = spr.width(), h = spr.height();
+            uint16_t *buf = (uint16_t *) spr.getBuffer(); // byte-swapped RGB565
             for (int dy = -span; dy <= span; dy++) {
-                for (int dx = -span; dx <= span; dx++) {
+                const int y = CENTRE + dy;
+                if (y < 0 || y >= h) continue;
+                // Pixels further out than edge are past the band's outer
+                // edge, and nearer the centre than skip inside its inner
+                // edge (each one pixel generous, so rounding can't lose any).
+                const float outside = outer2 - dy * dy, inside = inner2 - dy * dy;
+                if (outside < 0) continue;
+                const int edge = min(span, (int) sqrtf(outside) + 1);
+                const int skip = inside > 0 ? (int) sqrtf(inside) - 1 : 0;
+                for (int dx = -edge; dx <= edge; dx++) {
+                    if (dx > -skip && dx < skip) dx = skip;
+                    const int x = CENTRE + dx;
+                    if (x < 0 || x >= w) continue;
                     const float d2 = dx * dx + dy * dy;
                     if (d2 > outer2 || d2 < inner2) continue;
                     float dist = fabsf(sqrtf(d2) - R);
-                    if (!whole) {
-                        float angle = atan2f(dx, -dy);
-                        if (angle < 0) angle += 2 * PI;
-                        if (angle > a) { // past either end: measure to the nearer round cap
-                            const float s = hypotf(dx, dy + R), e = hypotf(dx - endX, dy - endY);
-                            dist = fminf(s, e);
-                        }
+                    if (!whole && !withinSweep(dx, dy, a, sinA, cosA)) {
+                        // past either end: measure to the nearer round cap
+                        const float sy = dy + R, ex = dx - endX, ey = dy - endY;
+                        dist = sqrtf(fminf(dx * dx + sy * sy, ex * ex + ey * ey));
                     }
                     const float cover = half + 0.5f - dist;
                     if (cover <= 0) continue;
-                    const int x = CENTRE + dx, y = CENTRE + dy;
-                    spr.drawPixel(x, y, cover >= 1 ? color : blend(color, spr.readPixel(x, y), cover));
+                    uint16_t &px = buf[y * w + x];
+                    px = __builtin_bswap16(cover >= 1 ? color : blend(color, __builtin_bswap16(px), cover));
                 }
             }
         }
