@@ -363,6 +363,14 @@ orbit and twin tanks.
       and plain `sqrtf` the `hypotf`s. An `orbit` repaint is now 31-33 ms
       (text ~6 ms, rings and clearing ~25 ms); 42-45 ms while the glyph
       cache fills after boot.
+   5. `pace` (measured, no change needed): with the 64 KB glyph cache warm,
+      a repaint is 13-15 ms (about 10 ms of text, 8 strings, plus ~4 ms
+      clearing). Measuring a cached string costs 0.1-0.3 ms; drawing it
+      0.5-1.5 ms, since the cache keeps outlines and each draw rasterizes.
+      The first repaint after a restart or style change is 50-112 ms while
+      glyphs load from the font (up to ~10 ms a string); that hits every
+      control once. Redrawing only the changed parts (~1-2 ms on the minute
+      tick) or warming the cache were both judged not worth it.
 
 ### Analog clock faces (planned, not started)
 
