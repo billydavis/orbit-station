@@ -22,7 +22,7 @@ desktop app, a script, `curl`) tells each screen what to show through a small
 REST API, and the board remembers it.
 
 <p align="center">
-  <img src="docs/orbit-station.webp" alt="The breadboard prototype: five round screens in a row, each filled edge to edge with a different piece of Makapix pixel art" width="800" />
+  <img src="docs/orbit-station.gif" alt="The breadboard prototype: five round screens in a row showing pixel art, the screensaver, an analog clock, Claude usage tanks and more pixel art" width="720" />
 </p>
 
 > **Status:** works on a breadboard prototype and has been through each of its
@@ -49,18 +49,18 @@ code this builds on.
 
 For the breadboard build. Quantities are for one Orbit Station.
 
-| Part | Qty | Notes |
-| ---- | --- | ----- |
-| ESP32-S3 N16R8 dev board | 1 | 16 MB flash, 8 MB octal PSRAM. Built and tested on the Lonely Binary ESP32-S3 (Gold Edition, ESP32-S3-WROOM-1). Use its **USB** socket, not **UART** |
-| ESP32-S3 screw terminal base | 1 | Lonely Binary's base for that board; optional, but it makes the wiring much easier |
-| GC9A01 1.28" round TFT, 240×240 | 5 | The common 7-pin SPI modules: VCC, GND, SCL, SDA, DC, CS, RST (no backlight pin) |
-| AMS1117-3.3 regulator module | 1 | Powers the screens. Pins are labelled VIN, OUT, GND (in that order on the common module) |
-| Capacitor, 10 µF | 1 | Across the 3.3 V rail, at the regulator |
-| Capacitor, 100 nF ceramic | 5 | One across VCC–GND at each screen's plug |
-| Solderless breadboard | 1 | Half-size or larger, with power rails |
-| 7-wire cable per screen, up to 20 cm | 5 | Tested at 20 cm and 40 MHz SPI; keep them that short |
-| Jumper wires | — | Board to breadboard |
-| 5 V USB-C power supply, 2 A or more | 1 | Five screens plus WiFi need more than a laptop port reliably gives; a phone charger or powered hub is fine |
+| Part                                 | Qty | Notes                                                                                                                                                |
+| ------------------------------------ | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ESP32-S3 N16R8 dev board             | 1   | 16 MB flash, 8 MB octal PSRAM. Built and tested on the Lonely Binary ESP32-S3 (Gold Edition, ESP32-S3-WROOM-1). Use its **USB** socket, not **UART** |
+| ESP32-S3 screw terminal base         | 1   | Lonely Binary's base for that board; optional, but it makes the wiring much easier                                                                   |
+| GC9A01 1.28" round TFT, 240×240      | 5   | The common 7-pin SPI modules: VCC, GND, SCL, SDA, DC, CS, RST (no backlight pin)                                                                     |
+| AMS1117-3.3 regulator module         | 1   | Powers the screens. Pins are labelled VIN, OUT, GND (in that order on the common module)                                                             |
+| Capacitor, 10 µF                     | 1   | Across the 3.3 V rail, at the regulator                                                                                                              |
+| Capacitor, 100 nF ceramic            | 5   | One across VCC–GND at each screen's plug                                                                                                             |
+| Solderless breadboard                | 1   | Half-size or larger, with power rails                                                                                                                |
+| 7-wire cable per screen, up to 20 cm | 5   | Tested at 20 cm and 40 MHz SPI; keep them that short                                                                                                 |
+| Jumper wires                         | —   | Board to breadboard                                                                                                                                  |
+| 5 V USB-C power supply, 2 A or more  | 1   | Five screens plus WiFi need more than a laptop port reliably gives; a phone charger or powered hub is fine                                           |
 
 A multimeter is very handy for checking the 3.3 V rail before connecting
 screens.
@@ -71,16 +71,16 @@ screens.
   <img src="docs/wiring.svg" alt="Wiring diagram: the ESP32-S3's GPIO12 (SCLK), GPIO11 (MOSI), GPIO13 (DC) and GPIO14 (RST) are shared by all five screens; GPIO10, 9, 8, 17 and 16 are each one screen's CS. The board's 5V pin feeds an AMS1117-3.3 module whose OUT and GND form the 3.3 V and GND rails that power the screens. The board's 3V3 pin is not used." width="900" />
 </p>
 
-| Signal | ESP32-S3 | Screens |
-| ------ | -------- | ------- |
-| SPI clock | GPIO12 | SCL on all five |
-| SPI data | GPIO11 | SDA on all five |
-| Data/command | GPIO13 | DC on all five |
-| Reset | GPIO14 | RST on all five |
-| Chip select | GPIO10, 9, 8, 17, 16 | CS of screen 1, 2, 3, 4, 5 (one each) |
-| 3.3 V | AMS1117 **OUT** | VCC on all five |
-| Ground | board GND and AMS1117 GND | GND on all five |
-| 5 V | board **5V** | AMS1117 **VIN** |
+| Signal       | ESP32-S3                  | Screens                               |
+| ------------ | ------------------------- | ------------------------------------- |
+| SPI clock    | GPIO12                    | SCL on all five                       |
+| SPI data     | GPIO11                    | SDA on all five                       |
+| Data/command | GPIO13                    | DC on all five                        |
+| Reset        | GPIO14                    | RST on all five                       |
+| Chip select  | GPIO10, 9, 8, 17, 16      | CS of screen 1, 2, 3, 4, 5 (one each) |
+| 3.3 V        | AMS1117 **OUT**           | VCC on all five                       |
+| Ground       | board GND and AMS1117 GND | GND on all five                       |
+| 5 V          | board **5V**              | AMS1117 **VIN**                       |
 
 Things that matter (each one learned the hard way on the prototype):
 
@@ -141,20 +141,20 @@ curl -X POST http://orbit-station-xx.local/orbit/api/v1/screens/2 \
      -d '{"control":"time","params":{"showDate":true,"showDay":true}}'
 ```
 
-| Control | Shows |
-| ------- | ----- |
-| `time` | Digital time, optionally with date and weekday |
-| `analogClock` | A clock face with hour, minute and second hands |
-| `gauge` | A ring, speedometer or instrument gauge for any value |
-| `sysMonitor` | CPU, GPU, RAM and drive temperature at a glance |
-| `countdown` | A timer that flashes "TIME'S UP"; `stop` puts back what was there |
-| `weather` | Current conditions, temperature or forecast text (Visual Crossing) |
-| `ticker` | A stock, crypto or forex price card (twelvedata) |
-| `custom` | Your own drawing: text, lines, shapes and arcs |
-| `screensaver` | Asteroids, matrix rain, warp, an orrery or radar, or all in turn |
-| `makapix` | Animated pixel art from Makapix Club, crisp or filling the screen, with a transition between pieces (`transition`: `random`, `none`, or an effect listed in `/orbit/api/v1/capabilities`) |
+| Control       | Shows                                                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `time`        | Digital time, optionally with date and weekday                                                                                                                                                                                        |
+| `analogClock` | A clock face with hour, minute and second hands                                                                                                                                                                                       |
+| `gauge`       | A ring, speedometer or instrument gauge for any value                                                                                                                                                                                 |
+| `sysMonitor`  | CPU, GPU, RAM and drive temperature at a glance                                                                                                                                                                                       |
+| `countdown`   | A timer that flashes "TIME'S UP"; `stop` puts back what was there                                                                                                                                                                     |
+| `weather`     | Current conditions, temperature or forecast text (Visual Crossing)                                                                                                                                                                    |
+| `ticker`      | A stock, crypto or forex price card (twelvedata)                                                                                                                                                                                      |
+| `custom`      | Your own drawing: text, lines, shapes and arcs                                                                                                                                                                                        |
+| `screensaver` | Asteroids, matrix rain, warp, an orrery or radar, or all in turn                                                                                                                                                                      |
+| `makapix`     | Animated pixel art from Makapix Club, crisp or filling the screen, with a transition between pieces (`transition`: `random`, `none`, or an effect listed in `/orbit/api/v1/capabilities`)                                             |
 | `claudeUsage` | Claude session and weekly limit use, reset countdowns, and whether the week is on pace (`session`, `week` in percent; `sessionResetsAt`, `weekResetsAt` in Unix seconds). `style`: `pace` (bars), `orbit` (rings) or `tanks` (liquid) |
-| `blank` | Nothing |
+| `blank`       | Nothing                                                                                                                                                                                                                               |
 
 The full request and response formats are the **orbit-api v1** spec, shared
 with info-orbs' OrbIt widget: see
@@ -164,13 +164,13 @@ additions.
 
 Board-wide endpoints:
 
-| Endpoint | Purpose |
-| -------- | ------- |
-| `GET /api/v1/system` | Address, WiFi, memory, uptime, and the reason for the last restart |
+| Endpoint                      | Purpose                                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/system`          | Address, WiFi, memory, uptime, and the reason for the last restart                                                     |
 | `GET`/`POST /api/v1/settings` | Timezone (`"America/Chicago"`), units, default weather location, and the weather and ticker API keys (reported masked) |
-| `GET /api/v1/makapix` | Makapix pairing state; `POST /api/v1/makapix/forget` starts over |
-| `GET /api/v1/log` | The last few dozen events: restarts and why, failed fetches, warnings |
-| `GET /api/v1/capabilities` | What this firmware supports |
+| `GET /api/v1/makapix`         | Makapix pairing state; `POST /api/v1/makapix/forget` starts over                                                       |
+| `GET /api/v1/log`             | The last few dozen events: restarts and why, failed fetches, warnings                                                  |
+| `GET /api/v1/capabilities`    | What this firmware supports                                                                                            |
 
 **Weather and prices** need free API keys from
 [Visual Crossing](https://www.visualcrossing.com/) and
@@ -194,14 +194,14 @@ every few seconds forever does no harm.
 
 ## How it works
 
-| Piece | What it does |
-| ----- | ------------ |
+| Piece        | What it does                                                                                                                                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Display core | Each screen has two 240×240 pictures in PSRAM. Controls draw a whole picture on one core; a sender on the other compares it with what the screen shows, 16×16 tiles at a time, and sends only the tiles that changed. About 20 frames per second on each of five screens at once |
-| Controls | One class per control: checks its params, draws its picture, and says which of its params are settings (saved) and which are live data (not saved) |
-| Layout | Which control each screen shows, saved in NVS only when it actually changes; drawings in their own LittleFS files |
-| Feeds | A background task fetches weather and prices, only for what a screen is showing, one HTTPS connection at a time |
-| Makapix | Pairs the board as a Makapix player, fetches each feed's posts, and decodes PNG, GIF, WebP and BMP art into PSRAM for playback |
-| Health | A watchdog over every task, a memory watch, a quiet refresh of one screen every 30 s (so a replugged screen recovers), and an event log |
+| Controls     | One class per control: checks its params, draws its picture, and says which of its params are settings (saved) and which are live data (not saved)                                                                                                                               |
+| Layout       | Which control each screen shows, saved in NVS only when it actually changes; drawings in their own LittleFS files                                                                                                                                                                |
+| Feeds        | A background task fetches weather and prices, only for what a screen is showing, one HTTPS connection at a time                                                                                                                                                                  |
+| Makapix      | Pairs the board as a Makapix player, fetches each feed's posts, and decodes PNG, GIF, WebP and BMP art into PSRAM for playback                                                                                                                                                   |
+| Health       | A watchdog over every task, a memory watch, a quiet refresh of one screen every 30 s (so a replugged screen recovers), and an event log                                                                                                                                          |
 
 ## Files
 
