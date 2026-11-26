@@ -685,8 +685,10 @@ namespace orbit {
                 !parseDateWindow(doc["date"], f.date, error) || !parseTextSpot(doc["weekday"], f.weekday, "weekday", error) ||
                 !parseTextSpot(doc["zoneLabel"], f.zoneLabel, "zoneLabel", error) || !parseRing(doc["secondsRing"], f.ring, error))
                 return false;
-            if (!f.zone.count) f.zone = DEFAULT_ZONE_HAND;
-            if (!f.zoneLabel.on) f.zoneLabel = DEFAULT_ZONE_LABEL;
+            // Only a clock face with a zone hand takes a second time zone: one
+            // without shows neither hand nor name, whatever the screen's zone2.
+            if (!f.zone.count) f.zoneLabel.on = false;
+            else if (!f.zoneLabel.on) f.zoneLabel = DEFAULT_ZONE_LABEL;
             return true;
         }
     }

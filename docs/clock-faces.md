@@ -67,7 +67,7 @@ settings):
 | `motion`   | `"tick"` | `"sweep"`: the second hand moves smoothly (about 10 fps, more drawing on the board) |
 | `secondsRing` | `false` | built-in clock faces: a ring round the rim (radius 116, 3 px, the second hand's colour) filling with the seconds; a file has its own `secondsRing` |
 | `timeZone` | `""`     | the hands show this timezone (IANA name, e.g. `"Europe/London"`); `""` for the board's own |
-| `zone2`    | `""`     | a second timezone: a hand going round once a day (24-hour scale) and the city's name on the dial |
+| `zone2`    | `""`     | a second timezone: a hand going round once a day (24-hour scale) and the city's name on the dial; only on clock faces with a zone hand (the built-in ones, and files with `hands.zone`) |
 
 An unknown timezone is refused with `400`.
 
@@ -98,13 +98,16 @@ An unknown timezone is refused with `400`.
 - `hands.hour`, `hands.minute` (required) and `hands.second` (optional; leave
   it out for no second hand): each 1 to 4 parts, drawn in order.
 - `hands.zone` (optional): the second timezone's hand, pointing at 12 for
-  midnight there. Left out, the board uses an orange arrow.
+  midnight there. Only a clock face with one takes a second timezone: left
+  out, the screen's `zone2` shows nothing (no hand, no name). The built-in
+  clock faces all take one, an orange arrow.
 - `cap` (optional): 1 to 4 parts drawn over the hands at the centre, not
   turned.
 - `date` (optional): a window with the day of the month.
 - `weekday` (optional): the day's name (`MON`...), over the dial.
 - `zoneLabel` (optional): where the second zone's name goes when the screen
-  has `zone2`. Left out: orange, 11 px, under the centre (120, 170).
+  has `zone2` (and the face a `hands.zone`). Left out: orange, 11 px, under
+  the centre (120, 170).
 - `secondsRing` (optional): a ring round the centre that fills clockwise
   from 12 o'clock with the seconds, ticking or sweeping with the second hand
   and hidden with it (`seconds: false`).

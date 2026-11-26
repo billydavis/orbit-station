@@ -31,7 +31,8 @@ namespace orbit {
     //   timeZone ("")            the hands show this timezone (IANA name);
     //                            "" for the board's own.
     //   zone2 ("")               a second timezone: a hand going round once a
-    //                            day, and the city's name on the dial.
+    //                            day, and the city's name on the dial. Built-in
+    //                            clock faces, and files with a hands.zone.
     //   clockFaceId ("")         the uploaded clock face's name, for clients.
     //   clockFaceHash ("")       show the uploaded clock face with this hash
     //                            (see below); "" for the built-in one.
