@@ -58,64 +58,95 @@ namespace smooth {
     }
 
     namespace {
-        // Sub-rows a pixel row is sampled at; across each sub-row the cover
-        // is exact. 16 gives near-horizontal edges 16 levels of shading.
-        constexpr int SUB = 16;
+        // The signed-area accumulation rasterizer font renderers use (as in
+        // font-rs): each edge adds, to the pixels it crosses on a row, how
+        // much of each pixel lies to its right, signed by its direction. A
+        // running sum across the row then gives every pixel's exact cover.
+        // One row at a time, in internal RAM; two spare cells, as an edge
+        // adds to the pixel after the last it touches.
+        float acc[320 + 3];
+        int accLo, accHi; // the cells touched on this row
 
-        // The polygon's cover of each pixel on the row being filled, in
-        // internal RAM (the sprite's width at most).
-        float rowCover[320];
+        inline void add(int i, float v) {
+            acc[i] += v;
+            accLo = min(accLo, i);
+            accHi = max(accHi, i);
+        }
 
-        void addSpan(float xa, float xb, int w) {
-            xa = fmaxf(xa, 0);
-            xb = fminf(xb, (float) w);
-            if (xb <= xa) return;
-            const int ia = (int) xa, ib = (int) xb;
-            constexpr float k = 1.0f / SUB;
-            if (ia == ib) {
-                rowCover[ia] += (xb - xa) * k;
+        // One edge's part of row y: from (x, top) to (xNext, bottom) within
+        // the row, d its height there signed by direction.
+        void addLine(float x, float xNext, float d, int w) {
+            x = fminf(fmaxf(x, 0), (float) w);
+            xNext = fminf(fmaxf(xNext, 0), (float) w);
+            const float lo = fminf(x, xNext), hi = fmaxf(x, xNext);
+            const float loFloor = floorf(lo), hiCeil = ceilf(hi);
+            const int i0 = (int) loFloor, i1 = (int) hiCeil;
+            if (i1 <= i0 + 1) {
+                // Within one pixel: the part right of the line's middle.
+                const float mid = 0.5f * (x + xNext) - loFloor;
+                add(i0, d - d * mid);
+                add(i0 + 1, d * mid);
                 return;
             }
-            rowCover[ia] += (ia + 1 - xa) * k;
-            for (int i = ia + 1; i < ib; i++) rowCover[i] += k;
-            if (ib < w) rowCover[ib] += (xb - ib) * k;
+            const float s = 1.0f / (hi - lo);
+            const float f0 = lo - loFloor;
+            const float a0 = 0.5f * s * (1 - f0) * (1 - f0);
+            const float f1 = hi - hiCeil + 1;
+            const float am = 0.5f * s * f1 * f1;
+            add(i0, d * a0);
+            if (i1 == i0 + 2) {
+                add(i0 + 1, d * (1 - a0 - am));
+            } else {
+                const float a1 = s * (1.5f - f0);
+                add(i0 + 1, d * (a1 - a0));
+                for (int i = i0 + 2; i < i1 - 1; i++) acc[i] += d * s;
+                const float a2 = a1 + (i1 - i0 - 3) * s;
+                add(i1 - 1, d * (1 - a2 - am));
+            }
+            add(i1, d * am);
         }
+
+        // An edge from its top to its bottom; dir is +1 if it runs down.
+        struct Edge {
+            float x, top, bottom, slope, dir;
+        };
     }
+
 
     void polygon(LGFX_Sprite &spr, const float *xy, int n, uint16_t color) {
         if (n < 3 || n > MAX_POINTS) return;
-        const int w = min(spr.width(), (int) (sizeof rowCover / sizeof rowCover[0])), h = spr.height();
-        float minX = xy[0], maxX = xy[0], minY = xy[1], maxY = xy[1];
-        for (int i = 1; i < n; i++) {
-            minX = fminf(minX, xy[2 * i]), maxX = fmaxf(maxX, xy[2 * i]);
-            minY = fminf(minY, xy[2 * i + 1]), maxY = fmaxf(maxY, xy[2 * i + 1]);
+        const int w = min(spr.width(), 320), h = spr.height();
+        float minY = xy[1], maxY = xy[1];
+        for (int i = 1; i < n; i++) minY = fminf(minY, xy[2 * i + 1]), maxY = fmaxf(maxY, xy[2 * i + 1]);
+        const int y0 = max(0, (int) floorf(minY)), y1 = min(h - 1, (int) ceilf(maxY) - 1);
+        if (y0 > y1) return;
+        Edge edges[MAX_POINTS];
+        int count = 0;
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
+            if (ay == by) continue; // level: adds nothing
+            float dir = 1;
+            if (ay > by) std::swap(ax, bx), std::swap(ay, by), dir = -1;
+            edges[count++] = {ax, ay, by, (bx - ax) / (by - ay), dir};
         }
-        const int x0 = max(0, (int) floorf(minX)), x1 = min(w - 1, (int) floorf(maxX));
-        const int y0 = max(0, (int) floorf(minY)), y1 = min(h - 1, (int) floorf(maxY));
-        if (x0 > x1 || y0 > y1) return;
         uint16_t *buf = (uint16_t *) spr.getBuffer(); // byte-swapped RGB565
-        float cross[MAX_POINTS];
         for (int y = y0; y <= y1; y++) {
-            for (int x = x0; x <= x1; x++) rowCover[x] = 0;
-            for (int s = 0; s < SUB; s++) {
-                const float sy = y + (s + 0.5f) / SUB;
-                int found = 0;
-                for (int i = 0, j = n - 1; i < n; j = i++) {
-                    const float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
-                    if ((ay <= sy) != (by <= sy)) cross[found++] = ax + (sy - ay) * (bx - ax) / (by - ay);
-                }
-                // Few crossings: sort them by insertion.
-                for (int i = 1; i < found; i++) {
-                    const float v = cross[i];
-                    int j = i - 1;
-                    for (; j >= 0 && cross[j] > v; j--) cross[j + 1] = cross[j];
-                    cross[j + 1] = v;
-                }
-                for (int i = 0; i + 1 < found; i += 2) addSpan(cross[i], cross[i + 1], w);
+            accLo = w + 2, accHi = -1;
+            for (int e = 0; e < count; e++) {
+                const Edge &g = edges[e];
+                const float top = fmaxf(g.top, (float) y), bottom = fminf(g.bottom, (float) (y + 1));
+                if (bottom <= top) continue;
+                const float x = g.x + (top - g.top) * g.slope;
+                addLine(x, x + (bottom - top) * g.slope, (bottom - top) * g.dir, w);
             }
+            if (accHi < accLo) continue;
             uint16_t *line = buf + y * spr.width();
-            for (int x = x0; x <= x1; x++) {
-                const float cover = rowCover[x];
+            float sum = 0;
+            for (int x = accLo; x <= accHi + 1 && x <= w + 2; x++) {
+                sum += acc[x];
+                acc[x] = 0; // ready for the next row
+                if (x >= w) continue;
+                const float cover = fminf(fabsf(sum), 1.0f);
                 if (cover <= 0.002f) continue;
                 line[x] = __builtin_bswap16(cover >= 0.998f ? color : blend(color, __builtin_bswap16(line[x]), cover));
             }

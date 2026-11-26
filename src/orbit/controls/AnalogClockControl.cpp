@@ -84,8 +84,62 @@ namespace orbit {
             return h;
         }
 
-        // Draws a shape turned angle degrees clockwise from 12 o'clock.
-        void drawShape(LGFX_Sprite &spr, const Shape &h, float angle, uint16_t color) {
+    }
+
+    // The pixels the hands covered on each row of one picture, x0 to x1
+    // (none when x0 > x1), so the next frame drawn into that picture puts
+    // back only those from the layer.
+    struct AnalogClockControl::Spans {
+        uint8_t x0[display::HEIGHT], x1[display::HEIGHT];
+
+        void clear() {
+            memset(x0, 255, sizeof x0);
+            memset(x1, 0, sizeof x1);
+        }
+
+        // Row y from a to b, a pixel wider either side for the smooth edges.
+        void add(int y, float a, float b) {
+            if (y < 0 || y >= display::HEIGHT) return;
+            const int lo = max(0, (int) floorf(fminf(a, b)) - 1), hi = min(display::WIDTH - 1, (int) floorf(fmaxf(a, b)) + 1);
+            if (lo > hi) return;
+            x0[y] = min<int>(x0[y], lo);
+            x1[y] = max<int>(x1[y], hi);
+        }
+
+        // A polygon covers, on each row, the span between where its edges
+        // cross that row's strip.
+        void addPolygon(const float *xy, int n) {
+            for (int i = 0, j = n - 1; i < n; j = i++) {
+                float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
+                if (ay > by) std::swap(ax, bx), std::swap(ay, by);
+                for (int y = max(0, (int) floorf(ay)); y <= min(display::HEIGHT - 1, (int) floorf(by)); y++) {
+                    if (by - ay < 1e-3f) {
+                        add(y, ax, bx);
+                        continue;
+                    }
+                    const float t0 = fmaxf(0, (y - ay) / (by - ay)), t1 = fminf(1, (y + 1 - ay) / (by - ay));
+                    add(y, ax + (bx - ax) * t0, ax + (bx - ax) * t1);
+                }
+            }
+        }
+
+        void addDisc(float cx, float cy, float r) {
+            for (int y = (int) floorf(cy - r - 1); y <= (int) floorf(cy + r + 1); y++) add(y, cx - r - 1, cx + r + 1);
+        }
+    };
+
+    struct AnalogClockControl::Frames {
+        Spans spans[2];
+        uint32_t layerGen[2] = {};
+        bool valid[2] = {};
+    };
+
+    namespace {
+        using Spans = AnalogClockControl::Spans;
+
+        // Draws a shape turned angle degrees clockwise from 12 o'clock, and
+        // adds what it covers to spans if given.
+        void drawShape(LGFX_Sprite &spr, const Shape &h, float angle, uint16_t color, Spans *spans = nullptr) {
             const float a = angle * DEG_TO_RAD, s = sinf(a), c = cosf(a);
             if (h.points) {
                 float xy[smooth::MAX_POINTS * 2];
@@ -95,10 +149,13 @@ namespace orbit {
                     xy[2 * i + 1] = MID - along * c + across * s;
                 }
                 smooth::polygon(spr, xy, h.points, color);
+                if (spans) spans->addPolygon(xy, h.points);
             }
             for (int i = 0; i < h.discs; i++) {
-                const float along = h.disc[i].along * FACE_RADIUS;
-                smooth::disc(spr, MID + along * s, MID - along * c, h.disc[i].radius * FACE_RADIUS, color);
+                const float along = h.disc[i].along * FACE_RADIUS, r = h.disc[i].radius * FACE_RADIUS;
+                const float x = MID + along * s, y = MID - along * c;
+                smooth::disc(spr, x, y, r, color);
+                if (spans) spans->addDisc(x, y, r);
             }
         }
 
@@ -113,8 +170,8 @@ namespace orbit {
             Part part[MAX_PARTS];
         };
 
-        void drawParts(LGFX_Sprite &spr, const Parts &p, float angle) {
-            for (int i = 0; i < p.count; i++) drawShape(spr, p.part[i].shape, angle, p.part[i].color);
+        void drawParts(LGFX_Sprite &spr, const Parts &p, float angle, Spans *spans = nullptr) {
+            for (int i = 0; i < p.count; i++) drawShape(spr, p.part[i].shape, angle, p.part[i].color, spans);
         }
 
         // ---- time ----
@@ -650,6 +707,7 @@ namespace orbit {
                     uint16_t *dst = (uint16_t *) layer[screen].getBuffer();
                     for (int i = 0; i < display::WIDTH * display::HEIGHT; i++) dst[i] = __builtin_bswap16(src[i]);
                     paintExtras(layer[screen], extras, f.date, f.weekday, f.zoneLabel);
+                    layerGen[screen]++;
                 }
             }
             free(data);
@@ -730,14 +788,14 @@ namespace orbit {
 
         const char *wanted = p["clockFaceHash"] | "";
         if (*wanted && useFile(ctx.screen, wanted, extras)) {
-            memcpy(spr.getBuffer(), layer[ctx.screen].getBuffer(), display::WIDTH * display::HEIGHT * 2);
+            Spans *spans = copyLayer(spr, ctx);
             if (!extras.timeSet) return; // just the dial until the clock is set
             const FileFace &f = file(ctx.screen);
-            if (zoneShown) drawParts(spr, f.zone, zoneAngle(zoneTime));
-            drawParts(spr, f.hour, a.hour);
-            drawParts(spr, f.minute, a.minute);
-            if (seconds) drawParts(spr, f.second, a.second);
-            drawParts(spr, f.cap, 0);
+            if (zoneShown) drawParts(spr, f.zone, zoneAngle(zoneTime), spans);
+            drawParts(spr, f.hour, a.hour, spans);
+            drawParts(spr, f.minute, a.minute, spans);
+            if (seconds) drawParts(spr, f.second, a.second, spans);
+            drawParts(spr, f.cap, 0, spans);
             return;
         }
 
@@ -764,23 +822,58 @@ namespace orbit {
             paintDial(s, face.dial, c);
             paintExtras(s, extras, DateWindow(), weekday, DEFAULT_ZONE_LABEL);
         };
+        Spans *spans = nullptr;
         if (ensureLayer(ctx.screen)) {
             if (key != layerKey[ctx.screen]) {
                 paint(layer[ctx.screen]);
                 layerKey[ctx.screen] = key;
+                layerGen[ctx.screen]++;
             }
-            memcpy(spr.getBuffer(), layer[ctx.screen].getBuffer(), display::WIDTH * display::HEIGHT * 2);
+            spans = copyLayer(spr, ctx);
         } else {
             paint(spr); // no PSRAM for a layer: slower, same picture
+            if (frames[ctx.screen] && ctx.picture >= 0) frames[ctx.screen]->valid[ctx.picture] = false;
         }
 
         if (!extras.timeSet) return; // just the dial until the clock is set
-        if (zoneShown) drawParts(spr, DEFAULT_ZONE_HAND, zoneAngle(zoneTime));
-        drawShape(spr, face.hour, a.hour, c.hour);
-        drawShape(spr, face.minute, a.minute, c.minute);
-        if (face.seconds && seconds) drawShape(spr, face.second, a.second, c.second);
-        smooth::disc(spr, MID, MID, face.hub, face.secondColorHub && face.seconds && seconds ? c.second : c.hour);
+        if (zoneShown) drawParts(spr, DEFAULT_ZONE_HAND, zoneAngle(zoneTime), spans);
+        drawShape(spr, face.hour, a.hour, c.hour, spans);
+        drawShape(spr, face.minute, a.minute, c.minute, spans);
+        if (face.seconds && seconds) drawShape(spr, face.second, a.second, c.second, spans);
+        const uint16_t hub = face.secondColorHub && face.seconds && seconds ? c.second : c.hour;
+        smooth::disc(spr, MID, MID, face.hub, hub);
         if (face.pin > 0) smooth::disc(spr, MID, MID, face.pin, PIN);
+        if (spans) spans->addDisc(MID, MID, face.hub);
+    }
+
+    // Puts the layer into the frame: only the rows' spans the hands covered
+    // last time, if this picture still holds that frame and the layer hasn't
+    // changed since; otherwise all of it (a 115 KB copy, ~5 ms). Returns
+    // where to record what this frame's hands cover, or nullptr.
+    AnalogClockControl::Spans *AnalogClockControl::copyLayer(LGFX_Sprite &spr, const DrawContext &ctx) {
+        const int s = ctx.screen, p = ctx.picture;
+        uint16_t *dst = (uint16_t *) spr.getBuffer();
+        const uint16_t *src = (const uint16_t *) layer[s].getBuffer();
+        if (!frames[s]) frames[s] = new Frames();
+        if (p < 0 || p > 1 || !frames[s]) {
+            memcpy(dst, src, display::WIDTH * display::HEIGHT * 2);
+            return nullptr;
+        }
+        Frames &f = *frames[s];
+        if (ctx.pictureClean && f.valid[p] && f.layerGen[p] == layerGen[s]) {
+            const Spans &old = f.spans[p];
+            for (int y = 0; y < display::HEIGHT; y++) {
+                if (old.x0[y] > old.x1[y]) continue;
+                const int at = y * display::WIDTH + old.x0[y];
+                memcpy(dst + at, src + at, (old.x1[y] - old.x0[y] + 1) * 2);
+            }
+        } else {
+            memcpy(dst, src, display::WIDTH * display::HEIGHT * 2);
+        }
+        f.spans[p].clear();
+        f.valid[p] = true;
+        f.layerGen[p] = layerGen[s];
+        return &f.spans[p];
     }
 
     bool AnalogClockControl::ensureLayer(int screen) {

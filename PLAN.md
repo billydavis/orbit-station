@@ -433,7 +433,7 @@ written only when it changes, like drawings:
    restoring only the strips under the old hands, which needs the display
    to tell a control a picture is unchanged since it drew it (transitions
    and the status screen also write pictures). Only worth it for the sweep
-   (step 4); at 1 fps it's under 1% of core 0.
+   (step 4); at 1 fps it's under 1% of core 0. Done later; see step 4.
 2. Polygon hands: rotate the outline points and fill with smooth edges
    (LovyanGFX has no anti-aliased polygon fill, so our own scanline fill
    with edge coverage). Built-in presets move to the same hand format.
@@ -494,6 +494,29 @@ written only when it changes, like drawings:
    screens kept their rates); an uploaded face like Dress would be ~18-20%.
    Most of that is copying the 115 KB layer (~5 ms); restoring only the
    strips under the old hands (step 1's note) would cut it.
+   Faster sweep (done, checked on the screens):
+   - The render loop tells a control which of its two pictures it draws
+     into and whether it's clean (`DrawContext::picture`/`pictureClean`):
+     unchanged since the control last drew it. Cleared when the control or
+     its params change, when the status screen draws, and when a
+     transition draws over it (`transition::apply` now says so); set under
+     the layout lock so an API write can't race it.
+   - The clock records, per picture, the span of each row its hands
+     covered, and on a clean picture with the same layer copies back only
+     those (0.3-0.5 ms instead of ~5). A temporary check redrew every
+     partial frame the slow way: 600 classic and 500 Dress frames, no pixel
+     different.
+   - Timing inside draw() then showed the polygon fill was the real cost
+     (~45 us a pixel row: a division per edge per sub-row, and the whole
+     bounding box cleared and scanned). Now the signed-area accumulation
+     rasterizer font renderers use (font-rs): exact cover, ~14.5 us a row.
+     Against 64x64 supersampling on the PC: every pixel within ~1.5 steps
+     of the 6-bit channel. Where an outline crosses itself, both loops
+     fill (non-zero) instead of cancelling.
+   - Sweep at 10 fps: classic with a zone hand 3.3-4.6 ms a frame, Dress
+     ~7 ms (~7% of core 0, was ~20%).
+   Not done: the mockup's seconds ring (a 3 px arc round the rim); it
+   wasn't in this step's list.
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
    a see-through overlay drawn over changing art (the one costly case).
 

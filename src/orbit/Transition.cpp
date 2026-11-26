@@ -307,7 +307,7 @@ namespace orbit {
                                        "mosaic",   "dissolve", "melt",     "checkerboard", "scanline", "rain", "sweep", nullptr};
         static_assert(sizeof(CHOICES) / sizeof(CHOICES[0]) == COUNT + FIRST_EFFECT + 1, "a name for every effect");
 
-        void apply(int screen, LGFX_Sprite &spr, uint32_t contentId, const char *choice) {
+        bool apply(int screen, LGFX_Sprite &spr, uint32_t contentId, const char *choice) {
             State &st = states[screen];
             if (contentId != st.content) {
                 const bool hadContent = st.content != 0;
@@ -315,11 +315,11 @@ namespace orbit {
                 if (hadContent && contentId) start(screen, st, choice);
                 else st.playing = false;
             }
-            if (!st.playing) return;
+            if (!st.playing) return false;
             const uint32_t elapsed = millis() - st.startedAt;
             if (elapsed >= DURATION_MS) {
                 st.playing = false; // this frame is the new picture, untouched
-                return;
+                return false;
             }
             uint16_t *out = (uint16_t *) spr.getBuffer();
             const uint16_t *to = out;
@@ -329,6 +329,7 @@ namespace orbit {
                 to = scratch;
             }
             effect.render((float) elapsed / DURATION_MS, st.seed, st.from, to, out);
+            return true;
         }
 
         void cancel(int screen) {

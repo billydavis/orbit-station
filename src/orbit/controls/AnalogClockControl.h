@@ -65,6 +65,9 @@ namespace orbit {
         // weekday and second zone show now; both live in the .cpp.
         struct FileFace;
         struct Extras;
+        // Per picture, what the hands covered (see copyLayer).
+        struct Spans;
+        struct Frames;
 
     private:
         // The parts that stay still (background and dial, or an uploaded
@@ -75,11 +78,14 @@ namespace orbit {
         String layerKey[display::NUM_SCREENS];
 
         FileFace *files[display::NUM_SCREENS] = {};
+        Frames *frames[display::NUM_SCREENS] = {};
+        uint32_t layerGen[display::NUM_SCREENS] = {}; // counts repaints of the layer
 
         bool ensureLayer(int screen);
         FileFace &file(int screen);
         const String &heldHash(int screen);
         bool useFile(int screen, const char *wanted, const Extras &extras);
+        Spans *copyLayer(LGFX_Sprite &spr, const DrawContext &ctx);
     };
 
 }

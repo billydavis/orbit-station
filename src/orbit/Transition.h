@@ -24,8 +24,9 @@ namespace orbit {
 
         // Call between display::beginFrame() and endFrame(), after the control
         // has drawn. contentId is what the control is showing (0 = nothing to
-        // transition from or to), choice one of CHOICES.
-        void apply(int screen, LGFX_Sprite &spr, uint32_t contentId, const char *choice);
+        // transition from or to), choice one of CHOICES. True if it drew
+        // into the picture (a change is playing).
+        bool apply(int screen, LGFX_Sprite &spr, uint32_t contentId, const char *choice);
 
         // Forget this screen's content, so the next picture just appears.
         void cancel(int screen);

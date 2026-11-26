@@ -122,7 +122,8 @@ them in the picture rather than drawing them into it.
 A part has a `color` (`"#rrggbb"`) and `points`, a `disc`, or both:
 
 - `points`: 3 to 16 `[x, y]` pairs, an outline filled with smooth edges
-  (even-odd, so it may be concave).
+  (it may be concave; where an outline crosses itself, overlapping loops are
+  both filled).
 - `disc`: `[along, radius]`, a filled circle on the hand's line.
 
 Units: 0 is the centre and 1 is the face's radius, 110 px (the screen is

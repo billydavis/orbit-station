@@ -31,7 +31,9 @@ namespace smooth {
     // centre is (x + 0.5, y + 0.5).
 
     // Fills a polygon of n points (x0, y0, x1, y1, ...), up to MAX_POINTS,
-    // with smooth edges. Inside is decided even-odd, so it may be concave.
+    // with exact smooth edges (each pixel's covered area). It may be concave;
+    // where an outline crosses itself, the overlapping loops are both filled
+    // (non-zero).
     constexpr int MAX_POINTS = 16;
     void polygon(LGFX_Sprite &spr, const float *xy, int n, uint16_t color);
 

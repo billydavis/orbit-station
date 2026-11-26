@@ -26,6 +26,8 @@ namespace display {
     LGFX_Sprite &beginFrame(int screen);
     // Hands the picture from beginFrame() to the sender.
     void endFrame(int screen);
+    // Which picture (0 or 1) beginFrame() gave out; -1 outside a frame.
+    int pictureIndex(int screen);
     // The picture handed over last, which is what the screen shows or is about
     // to. Only for the task drawing this screen, between beginFrame() and
     // endFrame(); nullptr if there isn't one yet.

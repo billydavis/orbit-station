@@ -15,6 +15,13 @@ namespace orbit {
     struct DrawContext {
         int screen;     // 0-4
         uint32_t nowMs; // millis() for this frame
+        // Which of the screen's two pictures this frame is drawn into (0 or
+        // 1), and whether it still holds exactly what this control drew into
+        // it last time it had it (nothing else has written it since, and the
+        // control and its params are the same). A control that redraws a
+        // little each frame can then restore only what it changed.
+        int picture;
+        bool pictureClean;
     };
 
     // An API write to one screen, for controls whose writes depend on what

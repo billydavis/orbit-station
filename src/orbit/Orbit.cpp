@@ -75,6 +75,10 @@ namespace orbit {
             // countdown) took it over: put back on stop, and saved in its place.
             int previous = -1;
             JsonDocument previousParams;
+            // Per picture: it holds exactly what the control last drew into
+            // it (DrawContext::pictureClean). Cleared whenever the control or
+            // its params change, or something else draws into the picture.
+            bool pictureClean[2] = {false, false};
         };
         Slot slots[NUM_SCREENS];
         SemaphoreHandle_t layoutLock; // the API (core 1) writes while the renderer (core 0) reads
@@ -153,6 +157,7 @@ namespace orbit {
             s.control = control;
             s.params = params;
             s.dirty = true;
+            s.pictureClean[0] = s.pictureClean[1] = false;
         }
 
         // Applies an API write. Call with the layout locked.
@@ -383,15 +388,20 @@ namespace orbit {
 
                     const uint32_t started = micros();
                     LGFX_Sprite &spr = display::beginFrame(i);
+                    const int picture = display::pictureIndex(i);
                     uint32_t content = 0;
                     char choice[16] = "none";
                     {
                         Lock lock;
                         if (i == 0 && status) {
                             ui::drawStatus(spr);
+                            s.pictureClean[picture] = false;
                         } else {
-                            DrawContext ctx = {i, now};
+                            DrawContext ctx = {i, now, picture, s.pictureClean[picture]};
                             CONTROLS[s.control]->draw(spr, s.params.as<JsonObjectConst>(), ctx);
+                            // Set with the lock held, so a write that changes
+                            // the control right after can't be marked clean.
+                            s.pictureClean[picture] = true;
                             s.dirty = false;
                             content = CONTROLS[s.control]->contentId(i);
                             strlcpy(choice, s.params["transition"] | "none", sizeof(choice));
@@ -401,8 +411,12 @@ namespace orbit {
                         s.lastDraw = every && since < 2 * every ? s.lastDraw + every : now;
                     }
                     // Outside the lock: the API shouldn't wait for this.
-                    if (i == 0 && status) transition::cancel(i);
-                    else transition::apply(i, spr, content, choice);
+                    if (i == 0 && status) {
+                        transition::cancel(i);
+                    } else if (transition::apply(i, spr, content, choice)) {
+                        Lock lock;
+                        s.pictureClean[picture] = false; // the change being played is drawn over it
+                    }
                     display::endFrame(i);
                     drawUs[i] += micros() - started;
                     drawCount[i]++;
@@ -553,6 +567,7 @@ namespace orbit {
                 s.params["clockFaceHash"] = hash;
                 s.updatedAt = millis();
                 s.dirty = true;
+                s.pictureClean[0] = s.pictureClean[1] = false;
                 if (!persistLayout()) doc["warning"] = NOT_SAVED_WARNING;
             }
             doc["screen"] = screen;

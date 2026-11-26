@@ -297,6 +297,8 @@ namespace display {
         return sc.pictures[i];
     }
 
+    int pictureIndex(int screen) { return screens[screen].drawing; }
+
     void endFrame(int screen) {
         Screen &sc = screens[screen];
         if (sc.drawing < 0) return;
