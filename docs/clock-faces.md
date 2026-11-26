@@ -65,6 +65,7 @@ settings):
 |------------|----------|---------|
 | `seconds`  | `true`   | show the second hand, if the clock face has one |
 | `motion`   | `"tick"` | `"sweep"`: the second hand moves smoothly (about 10 fps, more drawing on the board) |
+| `secondsRing` | `false` | built-in clock faces: a ring round the rim (radius 116, 3 px, the second hand's colour) filling with the seconds; a file has its own `secondsRing` |
 | `timeZone` | `""`     | the hands show this timezone (IANA name, e.g. `"Europe/London"`); `""` for the board's own |
 | `zone2`    | `""`     | a second timezone: a hand going round once a day (24-hour scale) and the city's name on the dial |
 
@@ -104,14 +105,19 @@ An unknown timezone is refused with `400`.
 - `weekday` (optional): the day's name (`MON`...), over the dial.
 - `zoneLabel` (optional): where the second zone's name goes when the screen
   has `zone2`. Left out: orange, 11 px, under the centre (120, 170).
+- `secondsRing` (optional): a ring round the centre that fills clockwise
+  from 12 o'clock with the seconds, ticking or sweeping with the second hand
+  and hidden with it (`seconds: false`).
 
 ```json
+"secondsRing": {"radius": 116, "width": 3, "color": "#e8423a"},
 "date": {"x": 175, "y": 120, "width": 30, "height": 22, "size": 15,
          "color": "#111111", "background": "#f5f2ea", "border": "#d8b46a"},
 "weekday": {"x": 120, "y": 72, "size": 14, "color": "#6e6a64"},
 "zoneLabel": {"x": 120, "y": 170, "size": 11, "color": "#d97757"}
 ```
 
+The ring's `radius` (10 to 120) and `width` (1 to 12) are in pixels.
 `x` and `y` are the middle of the text (or window) in pixels of the 240x240
 picture, `size` the font's pixel size (6 to 48), Roboto. A date window's
 `width` and `height` (8 to 120, default 30 x 22), `background` and `border`

@@ -90,20 +90,50 @@ namespace orbit {
     // (none when x0 > x1), so the next frame drawn into that picture puts
     // back only those from the layer.
     struct AnalogClockControl::Spans {
-        uint8_t x0[display::HEIGHT], x1[display::HEIGHT];
+        // Up to three stretches a row: a seconds ring crosses most rows at
+        // both ends, with the hands in between.
+        static constexpr int PER_ROW = 3;
+        uint8_t count[display::HEIGHT];
+        uint8_t x0[display::HEIGHT][PER_ROW], x1[display::HEIGHT][PER_ROW];
 
-        void clear() {
-            memset(x0, 255, sizeof x0);
-            memset(x1, 0, sizeof x1);
-        }
+        void clear() { memset(count, 0, sizeof count); }
 
         // Row y from a to b, a pixel wider either side for the smooth edges.
         void add(int y, float a, float b) {
             if (y < 0 || y >= display::HEIGHT) return;
             const int lo = max(0, (int) floorf(fminf(a, b)) - 1), hi = min(display::WIDTH - 1, (int) floorf(fmaxf(a, b)) + 1);
-            if (lo > hi) return;
-            x0[y] = min<int>(x0[y], lo);
-            x1[y] = max<int>(x1[y], hi);
+            if (lo <= hi) insert(y, lo, hi);
+        }
+
+        // Joins the stretches it overlaps or touches; with no room for
+        // another, joins the nearest one.
+        void insert(int y, int lo, int hi) {
+            uint8_t &n = count[y];
+            uint8_t *l = x0[y], *h = x1[y];
+            for (int i = 0; i < n;) {
+                if (lo <= h[i] + 1 && hi + 1 >= l[i]) {
+                    lo = min<int>(lo, l[i]), hi = max<int>(hi, h[i]);
+                    l[i] = l[n - 1], h[i] = h[n - 1];
+                    n--;
+                    i = 0; // the joined stretch may now reach another
+                } else {
+                    i++;
+                }
+            }
+            if (n < PER_ROW) {
+                l[n] = lo, h[n] = hi;
+                n++;
+                return;
+            }
+            int nearest = 0, gap = INT32_MAX;
+            for (int i = 0; i < n; i++) {
+                const int g = lo > h[i] ? lo - h[i] : l[i] - hi;
+                if (g < gap) gap = g, nearest = i;
+            }
+            const int nl = min<int>(lo, l[nearest]), nh = max<int>(hi, h[nearest]);
+            l[nearest] = l[n - 1], h[nearest] = h[n - 1];
+            n--;
+            insert(y, nl, nh);
         }
 
         // A polygon covers, on each row, the span between where its edges
@@ -125,6 +155,25 @@ namespace orbit {
 
         void addDisc(float cx, float cy, float r) {
             for (int y = (int) floorf(cy - r - 1); y <= (int) floorf(cy + r + 1); y++) add(y, cx - r - 1, cx + r + 1);
+        }
+
+        // The whole band between radii inner and outer round (cx, cy): on
+        // each row, its left and right pieces (or one across the top and
+        // bottom, where the band has no hole).
+        void addRing(float cx, float cy, float inner, float outer) {
+            for (int y = (int) floorf(cy - outer); y <= (int) floorf(cy + outer); y++) {
+                const float a = fabsf(y - cy), b = fabsf(y + 1 - cy);
+                const float near = (cy >= y && cy <= y + 1) ? 0 : fminf(a, b), far = fmaxf(a, b);
+                if (outer * outer <= near * near) continue;
+                const float xo = sqrtf(outer * outer - near * near);
+                if (inner * inner <= far * far) {
+                    add(y, cx - xo, cx + xo);
+                } else {
+                    const float xi = sqrtf(inner * inner - far * far);
+                    add(y, cx - xo, cx - xi);
+                    add(y, cx + xi, cx + xo);
+                }
+            }
         }
     };
 
@@ -233,6 +282,21 @@ namespace orbit {
             bool filled = false, bordered = false;
             uint16_t background = 0, border = 0;
         };
+
+        // A ring round the rim that fills with the seconds, from 12 o'clock
+        // to where the second hand is (the mockup's: radius 116, 3 px).
+        struct SecondsRing {
+            bool on = false;
+            float radius = 116, half = 1.5f; // pixels
+            uint16_t color = 0;
+        };
+
+        void drawRing(LGFX_Sprite &spr, const SecondsRing &ring, float secondAngle, Spans *spans) {
+            if (!ring.on) return;
+            smooth::arc(spr, CENTRE, CENTRE, ring.radius, ring.half, secondAngle, ring.color);
+            // The whole band, whatever the angle: next time it may be longer or shorter.
+            if (spans) spans->addRing(MID, MID, ring.radius - ring.half - 1.5f, ring.radius + ring.half + 1.5f);
+        }
 
         // The second zone's hand and name where a clock face doesn't give
         // its own: an orange arrow on a 24-hour scale (the mockup's).
@@ -510,6 +574,28 @@ namespace orbit {
             return true;
         }
 
+        // {"radius": 116, "width": 3, "color": "#rrggbb"}, pixels; absent is none.
+        bool parseRing(JsonVariantConst in, SecondsRing &out, String &error) {
+            out = SecondsRing();
+            if (in.isNull()) return true;
+            float radius, width;
+            if (!unitNumber(in["radius"], 120, radius) || radius < 10) {
+                error = "secondsRing.radius must be 10 to 120 pixels";
+                return false;
+            }
+            if (!unitNumber(in["width"], 12, width) || width < 1) {
+                error = "secondsRing.width must be 1 to 12 pixels";
+                return false;
+            }
+            if (!parseColor(in["color"], out.color)) {
+                error = "secondsRing.color must be \"#rrggbb\"";
+                return false;
+            }
+            out.on = true;
+            out.radius = radius, out.half = width / 2;
+            return true;
+        }
+
         // A text spot plus the window's size and optional fill and border.
         bool parseDateWindow(JsonVariantConst in, DateWindow &out, String &error) {
             out = DateWindow();
@@ -576,6 +662,7 @@ namespace orbit {
         Parts hour, minute, second, zone, cap;
         DateWindow date;
         TextSpot weekday, zoneLabel;
+        SecondsRing ring;
     };
 
     namespace {
@@ -596,7 +683,7 @@ namespace orbit {
                 !parseParts(hands["second"], f.second, "hands.second", false, error) ||
                 !parseParts(hands["zone"], f.zone, "hands.zone", false, error) || !parseParts(doc["cap"], f.cap, "cap", false, error) ||
                 !parseDateWindow(doc["date"], f.date, error) || !parseTextSpot(doc["weekday"], f.weekday, "weekday", error) ||
-                !parseTextSpot(doc["zoneLabel"], f.zoneLabel, "zoneLabel", error))
+                !parseTextSpot(doc["zoneLabel"], f.zoneLabel, "zoneLabel", error) || !parseRing(doc["secondsRing"], f.ring, error))
                 return false;
             if (!f.zone.count) f.zone = DEFAULT_ZONE_HAND;
             if (!f.zoneLabel.on) f.zoneLabel = DEFAULT_ZONE_LABEL;
@@ -701,6 +788,7 @@ namespace orbit {
                     f.date = parsed->date;
                     f.weekday = parsed->weekday;
                     f.zoneLabel = parsed->zoneLabel;
+                    f.ring = parsed->ring;
                     // The decoder's pixels are in native byte order; sprites
                     // hold them swapped.
                     const uint16_t *src = art->frames[0];
@@ -748,6 +836,7 @@ namespace orbit {
         if ((status = optionalColor(in, out, "secondColor", TFT_RED, error))) return status;
         if ((status = optionalBool(in, out, "seconds", true, error))) return status;
         if ((status = optionalChoice(in, out, "motion", MOTIONS, error))) return status;
+        if ((status = optionalBool(in, out, "secondsRing", false, error))) return status;
         if ((status = optionalZone(in, out, "timeZone", error))) return status;
         if ((status = optionalZone(in, out, "zone2", error))) return status;
         if ((status = optionalString(in, out, "clockFaceId", "", 64, error))) return status;
@@ -772,8 +861,8 @@ namespace orbit {
         if (!(p["seconds"] | true) || strcmp(p["motion"] | "tick", "sweep") != 0) return TICK_MS;
         const char *wanted = p["clockFaceHash"] | "";
         const FileFace *f = files[screen];
-        if (*wanted && f && f->loaded && f->hash == wanted) return f->second.count ? SWEEP_MS : TICK_MS;
-        return clockFace(p["clockFace"] | "classic").seconds ? SWEEP_MS : TICK_MS;
+        if (*wanted && f && f->loaded && f->hash == wanted) return f->second.count || f->ring.on ? SWEEP_MS : TICK_MS;
+        return clockFace(p["clockFace"] | "classic").seconds || (p["secondsRing"] | false) ? SWEEP_MS : TICK_MS;
     }
 
     void AnalogClockControl::draw(LGFX_Sprite &spr, JsonObjectConst p, const DrawContext &ctx) {
@@ -791,6 +880,7 @@ namespace orbit {
             Spans *spans = copyLayer(spr, ctx);
             if (!extras.timeSet) return; // just the dial until the clock is set
             const FileFace &f = file(ctx.screen);
+            if (seconds) drawRing(spr, f.ring, a.second, spans);
             if (zoneShown) drawParts(spr, f.zone, zoneAngle(zoneTime), spans);
             drawParts(spr, f.hour, a.hour, spans);
             drawParts(spr, f.minute, a.minute, spans);
@@ -836,6 +926,10 @@ namespace orbit {
         }
 
         if (!extras.timeSet) return; // just the dial until the clock is set
+        SecondsRing ring;
+        ring.on = seconds && (p["secondsRing"] | false);
+        ring.color = face.seconds ? c.second : c.hour; // minimal has no second hand to match
+        drawRing(spr, ring, a.second, spans);
         if (zoneShown) drawParts(spr, DEFAULT_ZONE_HAND, zoneAngle(zoneTime), spans);
         drawShape(spr, face.hour, a.hour, c.hour, spans);
         drawShape(spr, face.minute, a.minute, c.minute, spans);
@@ -863,9 +957,10 @@ namespace orbit {
         if (ctx.pictureClean && f.valid[p] && f.layerGen[p] == layerGen[s]) {
             const Spans &old = f.spans[p];
             for (int y = 0; y < display::HEIGHT; y++) {
-                if (old.x0[y] > old.x1[y]) continue;
-                const int at = y * display::WIDTH + old.x0[y];
-                memcpy(dst + at, src + at, (old.x1[y] - old.x0[y] + 1) * 2);
+                for (int k = 0; k < old.count[y]; k++) {
+                    const int at = y * display::WIDTH + old.x0[y][k];
+                    memcpy(dst + at, src + at, (old.x1[y][k] - old.x0[y][k] + 1) * 2);
+                }
             }
         } else {
             memcpy(dst, src, display::WIDTH * display::HEIGHT * 2);

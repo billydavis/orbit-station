@@ -515,8 +515,17 @@ written only when it changes, like drawings:
      fill (non-zero) instead of cancelling.
    - Sweep at 10 fps: classic with a zone hand 3.3-4.6 ms a frame, Dress
      ~7 ms (~7% of core 0, was ~20%).
-   Not done: the mockup's seconds ring (a 3 px arc round the rim); it
-   wasn't in this step's list.
+   Seconds ring (done, checked on the screens): the mockup's 3 px arc round
+   the rim, filling from 12 o'clock with the seconds. `secondsRing` param
+   for built-in faces (radius 116, the second hand's colour; the hour
+   hand's on minimal), `secondsRing: {radius, width, color}` in clock face
+   files. Follows `motion`, hidden with `seconds: false`. Drawn with
+   smooth::arc each frame; the partial copy now keeps up to three
+   stretches a row (ring left, hands, ring right) and restores the ring's
+   whole band (~5,400 px a frame). Checked on the PC: every pixel the arc
+   draws, over radii, widths and sweeps, falls inside the recorded spans.
+   Note: the board holds one clock face file per screen, so a test upload
+   replaces whatever Command Center put there.
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
    a see-through overlay drawn over changing art (the one costly case).
 

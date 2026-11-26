@@ -25,6 +25,9 @@ namespace orbit {
     //   motion ("tick")          tick: the second hand jumps once a second.
     //                            sweep: it moves smoothly (about 10 fps; costs
     //                            drawing time on core 0).
+    //   secondsRing (false)      built-in clock faces: a ring round the rim
+    //                            filling with the seconds (a clock face file
+    //                            has its own). Hidden with the second hand.
     //   timeZone ("")            the hands show this timezone (IANA name);
     //                            "" for the board's own.
     //   zone2 ("")               a second timezone: a hand going round once a
