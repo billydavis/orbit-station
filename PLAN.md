@@ -289,8 +289,8 @@ orbit and twin tanks.
    Decided on the bench: no amber/red as usage climbs; session stays
    orange and week sand at any level (grey with no reading), since the
    level shows it. Only pace's verdict line still uses amber and red.
-4. **Command Center** (built in OrbIt-Command-Center, tried end to end with
-   the board; not yet committed there): a Claude Usage control with a style
+4. **Command Center** (done in OrbIt-Command-Center, 9a1995a, tried end
+   to end with the board): a Claude Usage control with a style
    choice. It always follows `claude.session`, `claude.week`,
    `claude.sessionResetsAt` and `claude.weekResetsAt`: the binding is built
    into the app's Rust side (nothing to pick, nothing saved), so any screen
@@ -372,7 +372,7 @@ orbit and twin tanks.
       control once. Redrawing only the changed parts (~1-2 ms on the minute
       tick) or warming the cache were both judged not worth it.
 
-### Analog clock faces (planned, not started)
+### Analog clock faces (done)
 
 Designs: `docs/mockups/analog-clock.html` (eight finished faces and a
 builder). Today the clock is a 1 px circle, 12 ticks and three `drawLine`
@@ -537,10 +537,15 @@ written only when it changes, like drawings:
    the inside between them; each row now takes leftmost to rightmost.
    Note: the board holds one clock face file per screen, so a test upload
    replaces whatever Command Center put there.
-5. Later, only if wanted: Makapix art as the dial, which needs the dial as
-   a see-through overlay drawn over changing art (the one costly case).
+5. ~~Makapix art as the dial~~ (needs the dial as a see-through overlay
+   drawn over changing art, the one costly case). Skipped.
 
-**Command Center (OrbIt-Command-Center, not this repo):**
+**Command Center (OrbIt-Command-Center, not this repo):** done there
+(3ad8006 the builder, 4433269 second time zone only with a zone hand):
+`ClockFaceBuilder`/`ClockFaceList`, `clockFaceRenderer.ts`,
+`clockFaceSync.ts` (uploads on Apply where `clockFaceHeld` differs),
+`persistence/clock_faces.rs`, the picker in `AnalogClockForm` (with
+`secondsRing`), and the API in its `docs/orbit-api.md`. As planned:
 - A "Clock faces" rail section between Profiles and Feeds: round
   thumbnails of the saved clock faces and "New clock face" (starts from a
   preset gallery, the mockup's eight).
