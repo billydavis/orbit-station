@@ -489,7 +489,14 @@ written only when it changes, like drawings:
    America/Vancouver, Edmonton, Winnipeg, Yellowknife, Inuvik, Rainy_River
    (Canada's 2026 changes), Havana, Europe/Chisinau, Africa/Casablanca and
    El_Aaiun (Ramadan switches POSIX can't express). The board's own zone
-   uses the same table; refreshing it is open.
+   uses the same table.
+   Table refreshed (tzdata 2026f): `scripts/zones_refresh.py` takes each
+   zone's rule from its TZif footer, keeps every existing name (524 now,
+   aliases like `Asia/Calcutta` and new zones like `Europe/Kyiv` added)
+   and checks every zone every 15 minutes for two years. Canada, Chisinau
+   and Morocco (permanent +00 since 2026-09-20) now match; only Havana
+   differs: Cuba skipped the 2026 fall-back, which a POSIX rule can't say,
+   so it shows an hour behind until 2027-03-14, then is right.
    Sweep on classic: 10 fps at 11-13 ms a frame, ~12% of core 0 (other
    screens kept their rates); an uploaded face like Dress would be ~18-20%.
    Most of that is copying the 115 KB layer (~5 ms); restoring only the
@@ -524,6 +531,10 @@ written only when it changes, like drawings:
    stretches a row (ring left, hands, ring right) and restores the ring's
    whole band (~5,400 px a frame). Checked on the PC: every pixel the arc
    draws, over radii, widths and sweeps, falls inside the recorded spans.
+   Fix (0d04b46): a thin hand lying nearly flat (near 3 or 9) left a dotted
+   trail that pulsed every other second. Its two long edges cross a row
+   several pixels apart, and the spans recorded only those crossings, not
+   the inside between them; each row now takes leftmost to rightmost.
    Note: the board holds one clock face file per screen, so a test upload
    replaces whatever Command Center put there.
 5. Later, only if wanted: Makapix art as the dial, which needs the dial as
