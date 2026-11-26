@@ -136,20 +136,29 @@ namespace orbit {
             insert(y, nl, nh);
         }
 
-        // A polygon covers, on each row, the span between where its edges
-        // cross that row's strip.
+        // A polygon covers, on each row, everything from the leftmost to the
+        // rightmost place its edges cross that row's strip. Not each edge's
+        // crossing on its own: a thin hand lying nearly flat has its two
+        // long edges cross a row several pixels apart, with the filled
+        // inside between them.
         void addPolygon(const float *xy, int n) {
-            for (int i = 0, j = n - 1; i < n; j = i++) {
-                float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
-                if (ay > by) std::swap(ax, bx), std::swap(ay, by);
-                for (int y = max(0, (int) floorf(ay)); y <= min(display::HEIGHT - 1, (int) floorf(by)); y++) {
-                    if (by - ay < 1e-3f) {
-                        add(y, ax, bx);
-                        continue;
+            float minY = xy[1], maxY = xy[1];
+            for (int i = 1; i < n; i++) minY = fminf(minY, xy[2 * i + 1]), maxY = fmaxf(maxY, xy[2 * i + 1]);
+            const int yTop = max(0, (int) floorf(minY)), yBottom = min(display::HEIGHT - 1, (int) floorf(maxY));
+            for (int y = yTop; y <= yBottom; y++) {
+                float lo = INFINITY, hi = -INFINITY;
+                for (int i = 0, j = n - 1; i < n; j = i++) {
+                    float ax = xy[2 * j], ay = xy[2 * j + 1], bx = xy[2 * i], by = xy[2 * i + 1];
+                    if (ay > by) std::swap(ax, bx), std::swap(ay, by);
+                    if (by < y || ay > y + 1) continue; // misses this row
+                    float a = ax, b = bx;
+                    if (by - ay >= 1e-3f) {
+                        const float t0 = fmaxf(0, (y - ay) / (by - ay)), t1 = fminf(1, (y + 1 - ay) / (by - ay));
+                        a = ax + (bx - ax) * t0, b = ax + (bx - ax) * t1;
                     }
-                    const float t0 = fmaxf(0, (y - ay) / (by - ay)), t1 = fminf(1, (y + 1 - ay) / (by - ay));
-                    add(y, ax + (bx - ax) * t0, ax + (bx - ax) * t1);
+                    lo = fminf(lo, fminf(a, b)), hi = fmaxf(hi, fmaxf(a, b));
                 }
+                if (lo <= hi) add(y, lo, hi);
             }
         }
 
