@@ -253,7 +253,14 @@ Still open:
   something other than art (a web page))" logged once, nothing skipped,
   both screens kept their art; "reachable again" and new art 15 s after
   unpausing, each queue where it left off.
-- A real router reboot on the 30-second retry build.
+- ~~A real router reboot on the 30-second retry build.~~ Done (2026-11-27,
+  eero network restart, watched over USB serial): disconnected at 09:36:15,
+  Makapix logged "can't reach" once, "lost WiFi" at 09:38:15, the 30 s
+  retry found the eero and connected at 09:38:48, Makapix back 2 s later
+  with each queue where it left off. No restart. Minor: screen 1 fetched
+  two posts 13 s apart after reconnecting (it showed the network status
+  meanwhile, so its art was let go), and disconnect reason 2 is labelled
+  "authentication failed" though it means the router went away.
 - ~~A longer run to see whether the largest-block low flattens out.~~
   Covered by daily use instead of a set run.
 
