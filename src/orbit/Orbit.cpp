@@ -1,5 +1,6 @@
 #include "Orbit.h"
 #include "Control.h"
+#include "Pictures.h"
 #include "Transition.h"
 #include "controls/AnalogClockControl.h"
 #include "controls/BlankControl.h"
@@ -20,6 +21,7 @@
 #include "ui/StatusScreen.h"
 #include <LittleFS.h>
 #include <Preferences.h>
+#include <uri/UriBraces.h>
 
 namespace orbit {
 
@@ -577,6 +579,121 @@ namespace orbit {
             sendJson(200, doc);
         }
 
+        // ---- Pictures (see Pictures.h) ----
+
+        // The pictures the screens list, which the store must keep.
+        std::vector<String> picturesInUse() {
+            std::vector<String> out;
+            Lock lock;
+            for (Slot &s : slots) {
+                for (JsonVariantConst v : s.params["pictures"].as<JsonArrayConst>()) {
+                    if (v.is<const char *>()) out.push_back(v.as<String>());
+                }
+            }
+            return out;
+        }
+
+        // The WebServer's own connection: client() hands out a copy, and a
+        // timeout set on that wouldn't reach the WebServer's reads.
+        struct LiveClient : WebServer {
+            static WiFiClient &of(WebServer &s) { return s.*(&LiveClient::_currentClient); }
+        };
+
+        // The WebServer reads a raw body HTTP_RAW_BUFLEN bytes at a time and
+        // waits for a whole buffer each time, up to the connection's 5 s
+        // timeout for each gap. That's cut to 2 s (a client gone quiet that
+        // long has most likely gone), and once less than a buffer is left,
+        // to 250 ms, since the rest is already on its way; otherwise the
+        // last, shorter piece would always sit out the timeout.
+        void setReadWait(size_t received) {
+            const size_t length = server->clientContentLength();
+            const bool last = received < length && length - received < HTTP_RAW_BUFLEN;
+            static_cast<Stream &>(LiveClient::of(*server)).setTimeout(last ? 250 : 2000);
+        }
+
+        // PUT .../pictures/{hash}: the body arrives here a chunk at a time,
+        // straight from the connection to flash.
+        void handlePictureBody() {
+            HTTPRaw &raw = server->raw();
+            switch (raw.status) {
+            case RAW_START:
+                setReadWait(0);
+                pictures::begin(server->pathArg(0), server->clientContentLength(), picturesInUse());
+                if ((size_t) server->clientContentLength() > pictures::MAX_BYTES) {
+                    // Too big to be worth reading: answer now and hang up
+                    // (the server's own connection; stopping a copy leaves
+                    // it open). The reads then fail and RAW_ABORTED tidies
+                    // up.
+                    sendError(413, "the picture is " + String(server->clientContentLength()) + " bytes; the most is " +
+                                       String(pictures::MAX_BYTES) + " (1 MB)");
+                    LiveClient::of(*server).stop();
+                }
+                break;
+            case RAW_WRITE:
+                pictures::write(raw.buf, raw.currentSize);
+                setReadWait(raw.totalSize);
+                break;
+            case RAW_ABORTED:
+                pictures::abort();
+                break;
+            case RAW_END:
+                break;
+            }
+        }
+
+        // ...then, with all of it in, this answers.
+        void handlePutPicture() {
+            if (!pictures::active()) {
+                if (server->client().connected()) sendError(400, "send the picture file itself as the body, not a form");
+                return;
+            }
+            JsonDocument doc;
+            String error;
+            const int status = pictures::end(doc.to<JsonObject>(), error);
+            if (status != 200) {
+                sendError(status, error);
+                return;
+            }
+            sendJson(200, doc);
+        }
+
+        void handleGetPictures() {
+            JsonDocument doc;
+            pictures::list(doc.to<JsonObject>(), picturesInUse());
+            sendJson(200, doc);
+        }
+
+        // GET .../pictures/{hash}: the file itself, as stored.
+        void handleGetPicture() {
+            const String hash = server->pathArg(0);
+            if (!pictures::has(hash)) {
+                sendError(404, "the board doesn't have picture " + hash);
+                return;
+            }
+            File f = LittleFS.open(pictures::path(hash), "r");
+            uint8_t sig[4] = {};
+            f.read(sig, 4);
+            f.seek(0);
+            const char *type = sig[0] == 0xFF ? "image/jpeg" : sig[0] == 0x89 ? "image/png" : sig[0] == 'G' ? "image/gif" : "image/webp";
+            health::pause(true); // a big file over a slow link outlasts the loop watchdog
+            server->streamFile(f, type);
+            health::pause(false);
+            f.close();
+        }
+
+        void handleDeletePicture() {
+            String error;
+            const String hash = server->pathArg(0);
+            const int status = pictures::remove(hash, picturesInUse(), error);
+            if (status != 200) {
+                sendError(status, error);
+                return;
+            }
+            JsonDocument doc;
+            doc["removed"] = hash;
+            sendJson(200, doc);
+        }
+
         // Ticker screens only: fetch the price now, whatever the interval.
         void handleRefresh(int screen) {
             Lock lock;
@@ -632,6 +749,9 @@ namespace orbit {
             clockFaces["fileVersion"] = AnalogClockControl::FILE_VERSION;
             JsonArray builtIn = clockFaces["builtIn"].to<JsonArray>();
             for (int i = 0; AnalogClockControl::CLOCK_FACES[i]; i++) builtIn.add(AnalogClockControl::CLOCK_FACES[i]);
+            // Pictures can be uploaded (PUT .../pictures/{hash}) for the
+            // picture control.
+            pictures::capabilities(doc["pictures"].to<JsonObject>());
             doc["api"] = String(API_BASE) + "/screens";
             sendJson(200, doc);
         }
@@ -669,6 +789,11 @@ namespace orbit {
         }
         s.on(String(API_BASE) + "/weather/preview", HTTP_POST, handleWeatherPreview);
         s.on(String(API_BASE) + "/capabilities", HTTP_GET, handleCapabilities);
+        const String picturesUri = String(API_BASE) + "/pictures";
+        s.on(picturesUri, HTTP_GET, handleGetPictures);
+        s.on(UriBraces(picturesUri + "/{}"), HTTP_PUT, handlePutPicture, handlePictureBody);
+        s.on(UriBraces(picturesUri + "/{}"), HTTP_GET, handleGetPicture);
+        s.on(UriBraces(picturesUri + "/{}"), HTTP_DELETE, handleDeletePicture);
     }
 
     uint32_t takeDrawUs(int screen) {
@@ -683,7 +808,7 @@ namespace orbit {
         if (!filesReady) {
             // Formats the data partition on first use.
             filesReady = LittleFS.begin(true);
-            if (!filesReady) Serial.println("OrbIt: couldn't mount LittleFS; drawings and clock faces won't be saved");
+            if (!filesReady) Serial.println("OrbIt: couldn't mount LittleFS; drawings, clock faces and pictures won't be saved");
         }
         return filesReady;
     }

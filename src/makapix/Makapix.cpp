@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <time.h>
+#include "net/TlsClient.h"
 
 namespace makapix {
 
@@ -96,10 +97,11 @@ namespace makapix {
         // Returns the HTTP status (or <= 0), with the reply parsed into doc.
         int request(const char *method, const String &url, const String &body, JsonDocument *doc, bool auth) {
             net::HttpsTurn turn;
+            net::TlsClient tls; // before http, so it outlives it
             HTTPClient http;
             http.setConnectTimeout(8000);
             http.setTimeout(10000);
-            if (!http.begin(url)) return -1;
+            if (!net::begin(http, tls, url)) return -1;
             http.addHeader("Content-Type", "application/json");
             if (auth) http.addHeader("Authorization", "Bearer " + apiToken);
             const int code = strcmp(method, "GET") == 0 ? http.GET() : http.POST(body);
@@ -261,10 +263,11 @@ namespace makapix {
             int size = 0;
             {
             net::HttpsTurn turn; // released before decoding, which can take a while
+            net::TlsClient tls; // before http, so it outlives it
             HTTPClient http;
             http.setConnectTimeout(8000);
             http.setTimeout(15000);
-            if (!http.begin(p.url)) {
+            if (!net::begin(http, tls, p.url)) {
                 error = "bad art URL";
                 return nullptr;
             }
@@ -345,9 +348,10 @@ namespace makapix {
             String s;
             serializeJson(body, s);
             net::HttpsTurn turn;
+            net::TlsClient tls; // before http, so it outlives it
             HTTPClient http;
             http.setTimeout(8000);
-            if (http.begin(String(BASE) + "/player/events/view")) {
+            if (net::begin(http, tls, String(BASE) + "/player/events/view")) {
                 http.addHeader("Content-Type", "application/json");
                 http.addHeader("Authorization", "Bearer " + apiToken);
                 http.POST(s);

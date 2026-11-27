@@ -593,7 +593,7 @@ written only when it changes, like drawings:
 - Optional "Try on screen n" while editing: sends a draft on a button
   press, not on every change, since each one writes the board's flash.
 
-### Picture control (planned, not started)
+### Picture control (in progress)
 
 Your own pictures on a screen: photos, graphics or animated GIFs, one or a
 slideshow. info-orbs' "start" of this (the WebData widget's image element)
@@ -649,6 +649,35 @@ uses is never removed.
    checks, list, delete, eviction, capability. Tested from a script: good
    files, nine kinds of bad one, a dropped connection mid-upload, a full
    store. Check the upload doesn't block the loop or the screens.
+   Done (`orbit/Pictures`), checked on the board: 31 checks pass (four
+   formats incl. animated WebP, re-upload a no-op, wrong hash, bad name,
+   not an image, a web page, wrong size, progressive JPEG, empty body,
+   over 1 MB, a form upload, unknown delete, a dropped connection leaving
+   nothing, six 936 KB uploads evicting the oldest unused in order).
+   Also `GET .../pictures/{hash}` returns the file. Files go to
+   `/pictures/{hash}` through a partial file, renamed in when checked.
+   - Costs: flash writes run ~40-50 KB/s (a 25 KB photo < 1 s, a 1 MB GIF
+     ~20 s), and a flash write turns the cache off on both cores, so
+     animated screens drop from ~19 to ~11 fps while one runs. Batching
+     writes (16 KB) was slower and makes longer hitches, so the body is
+     written as it arrives. The upload runs on the Arduino loop (the
+     WebServer reads the body there): the loop watchdog is paused and other
+     requests wait until it ends.
+   - The WebServer asks for 1436 bytes a read and waits a whole timeout for
+     the last, shorter piece (5.5 s on every upload). The read wait is cut
+     to 2 s, and to 250 ms once less than a buffer is left; its client()
+     hands out a copy, so this sets the server's own connection.
+   - Found on the way, older than pictures: arduino-esp32 2.0.17's
+     stop_ssl_socket() zeroes the TLS context, leaving socket 0, and the
+     next WiFiClientSecure::stop() calls close(0). Every HTTPS request
+     (Makapix, weather, prices) closed whatever held descriptor 0: stdin
+     long ago, then any LittleFS file that got 0, mid-write ("bad file
+     descriptor", or an lfs_file_write assert and a restart). Very likely
+     the one-off LittleFS assert in clock face step 3. Found by wrapping
+     `_close_r` to print who closes fds 0-2. `net::TlsClient` puts the
+     socket back to -1; Makapix and Feeds give HTTPClient one (it makes the
+     faulty kind itself otherwise). Certificate checking unchanged
+     (insecure, as before).
 2. `picture` control, one still: decode JPEG (LovyanGFX), PNG, WebP or BMP
    (Makapix's decoders) into a 115 KB PSRAM picture once; a still costs
    nothing per frame after that (tile diff sends nothing).

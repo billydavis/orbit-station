@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include "net/TlsClient.h"
 
 namespace feeds {
 
@@ -70,9 +71,10 @@ namespace feeds {
         // GET url into doc. Returns "" or what went wrong.
         String getJson(const String &url, JsonDocument &doc) {
             net::HttpsTurn turn;
+            net::TlsClient tls; // before http, so it outlives it
             HTTPClient http;
             http.setTimeout(10000);
-            if (!http.begin(url)) return "couldn't start the request";
+            if (!net::begin(http, tls, url)) return "couldn't start the request";
             const int code = http.GET();
             String problem;
             if (code <= 0) {
