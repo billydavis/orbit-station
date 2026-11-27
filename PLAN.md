@@ -593,7 +593,7 @@ written only when it changes, like drawings:
 - Optional "Try on screen n" while editing: sends a draft on a button
   press, not on every change, since each one writes the board's flash.
 
-### Picture control (in progress)
+### Picture control (board done; Command Center to do)
 
 Your own pictures on a screen: photos, graphics or animated GIFs, one or a
 slideshow. info-orbs' "start" of this (the WebData widget's image element)
@@ -742,6 +742,11 @@ uses is never removed.
    ~2.5 KB with GIFs.
 5. Docs: `docs/pictures.md` (the API and limits), README's control table,
    and Command Center's `docs/orbit-api.md`.
+   Done: `docs/pictures.md` (formats and limits, the store API with
+   answers and errors, room, the control's params and messages, animation
+   rates, memory, and how a client should upload), the README's control
+   table (and links to both Orbit Station docs), and the `picture`
+   section in Command Center's `docs/orbit-api.md`.
 
 **Command Center (OrbIt-Command-Center):**
 1. Rust side: `persistence/pictures.rs` (`pictures.json` plus a folder of

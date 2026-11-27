@@ -154,13 +154,16 @@ curl -X POST http://orbit-station-xx.local/orbit/api/v1/screens/2 \
 | `screensaver` | Asteroids, matrix rain, warp, an orrery or radar, or all in turn                                                                                                                                                                      |
 | `makapix`     | Animated pixel art from Makapix Club, crisp or filling the screen, with a transition between pieces (`transition`: `random`, `none`, or an effect listed in `/orbit/api/v1/capabilities`)                                             |
 | `claudeUsage` | Claude session and weekly limit use, reset countdowns, and whether the week is on pace (`session`, `week` in percent; `sessionResetsAt`, `weekResetsAt` in Unix seconds). `style`: `pace` (bars), `orbit` (rings) or `tanks` (liquid) |
+| `picture`     | Your own pictures, uploaded by a client and cropped to the screen: one, or a slideshow (`seconds`, `order`, `transition`). Animated GIFs play. See [`docs/pictures.md`](docs/pictures.md)                                             |
 | `blank`       | Nothing                                                                                                                                                                                                                               |
 
 The full request and response formats are the **orbit-api v1** spec, shared
 with info-orbs' OrbIt widget: see
 [`docs/orbit-api.md`](https://github.com/billydavis/OrbIt-Command-Center/blob/master/docs/orbit-api.md)
-in OrbIt Command Center. `makapix` and `claudeUsage` are Orbit Station's
-additions.
+in OrbIt Command Center. `makapix`, `claudeUsage` and `picture` are Orbit
+Station's additions, and so are clock face files for `analogClock`; their
+details are in [`docs/pictures.md`](docs/pictures.md) and
+[`docs/clock-faces.md`](docs/clock-faces.md).
 
 Board-wide endpoints:
 
