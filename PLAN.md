@@ -243,8 +243,16 @@ Still open:
   `firmwareCommit` and `firmwareElfSha` (the hash a crash report's
   `ELF file SHA256` line shows), so the next crash can be decoded exactly.
   Libraries are pinned to exact versions.
-- Test the Makapix outage fix with WiFi up and the internet down. The `q` WiFi
-  test doesn't reach that code, because Makapix waits while WiFi is down.
+- ~~Test the Makapix outage fix with WiFi up and the internet down.~~ Done
+  (2026-11-27) by pausing the board's eero profile, watched over USB serial
+  (the pause also blocks the LAN). It found a gap first: the eero answers
+  art downloads with its own web page, which the board blamed on the
+  artwork, skipping 17 posts in 22 s. A download that doesn't start like a
+  PNG, GIF, WebP or BMP now counts as a network problem, like no
+  connection. Retest, 9 minutes paused: "can't reach Makapix (got
+  something other than art (a web page))" logged once, nothing skipped,
+  both screens kept their art; "reachable again" and new art 15 s after
+  unpausing, each queue where it left off.
 - A real router reboot on the 30-second retry build.
 - ~~A longer run to see whether the largest-block low flattens out.~~
   Covered by daily use instead of a set run.

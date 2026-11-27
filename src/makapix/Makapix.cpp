@@ -237,9 +237,19 @@ namespace makapix {
         // Why fetchArt failed, when it wasn't this artwork's fault.
         enum class Shortage : uint8_t { None, Network, Memory };
 
+        // Whether data starts as one of the formats decode() reads (PNG,
+        // GIF, WebP, BMP) does. A file that does but won't decode is the
+        // artwork's problem; one that doesn't is someone else's reply.
+        bool looksLikeImage(const uint8_t *d, int size) {
+            if (size < 12) return false;
+            return !memcmp(d, "\x89PNG", 4) || !memcmp(d, "GIF8", 4) ||
+                   (!memcmp(d, "RIFF", 4) && !memcmp(d + 8, "WEBP", 4)) || !memcmp(d, "BM", 2);
+        }
+
         // shortage is Network when the download failed for want of a
-        // connection (DNS, connect, timeout), Memory when there wasn't room
-        // for it; None for a problem with this artwork.
+        // connection (DNS, connect, timeout) or something other than
+        // Makapix answered, Memory when there wasn't room for it; None for a
+        // problem with this artwork.
         std::shared_ptr<Artwork> fetchArt(const Post &p, String &error, Shortage &shortage) {
             shortage = Shortage::None;
             if (!roomFor(p.bytes, 0)) {
@@ -297,6 +307,16 @@ namespace makapix {
                 error = "download cut short";
                 return nullptr;
             }
+            }
+            if (!looksLikeImage(buf, size)) {
+                // Something on the way answered instead of Makapix: a router
+                // blocking the board, a captive portal, a proxy's error page.
+                // Not this artwork's fault, so keep it for later.
+                shortage = Shortage::Network;
+                error = "got something other than art";
+                if (buf[0] == '<') error += " (a web page)";
+                free(buf);
+                return nullptr;
             }
             std::shared_ptr<Artwork> art = decode(buf, size, p.format, ART_BUDGET, error);
             free(buf);
