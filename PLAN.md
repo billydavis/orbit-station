@@ -593,6 +593,97 @@ written only when it changes, like drawings:
 - Optional "Try on screen n" while editing: sends a draft on a button
   press, not on every change, since each one writes the board's flash.
 
+### Picture control (planned, not started)
+
+Your own pictures on a screen: photos, graphics or animated GIFs, one or a
+slideshow. info-orbs' "start" of this (the WebData widget's image element)
+is a stub, its draw a TODO, so nothing is ported; the pieces here already
+exist (Makapix's decoders, LovyanGFX's JPEG, the clock face upload pattern,
+transitions).
+
+**Decided (2026-11-27):**
+- Pictures come from the PC: picked and cropped in Command Center, uploaded
+  to the board on Apply. The board never fetches a picture from a URL, so
+  it works with no internet.
+- A screen shows a slideshow: an ordered list of pictures changing every N
+  seconds with the existing transitions (one picture is a list of one).
+- Animated GIFs play.
+- Command Center crops to the circle (pan and zoom) and sends exactly
+  240x240; the board never scales.
+
+**The split.** As with clock faces: Command Center keeps the originals and
+does all the image work; the board stores finished 240x240 files and shows
+them.
+
+**Picture files on the board:** one LittleFS file per picture, named by its
+hash (`/pictures/{hash}`), shared by every screen that shows it. Hash = the
+first 16 hex digits of the file's SHA-256, so Command Center can work it out
+itself. About 3.4 MB of LittleFS: a 240x240 JPEG photo is ~20-30 KB, a PNG
+graphic ~30-100 KB, an animated GIF up to the cap (1 MB). Files no screen
+uses are kept as a cache (switching profiles back needs no re-upload) and
+removed oldest first only when an upload needs the room; a file a screen
+uses is never removed.
+
+**API (proposal):**
+- `PUT /orbit/api/v1/pictures/{hash}`: the file itself as the body
+  (JPEG, PNG, GIF or WebP, 240x240, up to 1 MB), streamed to LittleFS
+  through the WebServer's raw upload (no base64, no body in RAM). The board
+  checks the hash, the signature and the size, then renames it into place;
+  a bad or partial file is removed. Uploading a hash it has is a no-op.
+- `GET /orbit/api/v1/pictures`: the hashes held, each file's size, and the
+  space left.
+- `DELETE /orbit/api/v1/pictures/{hash}`: for clients that want to tidy up;
+  refused while a screen uses it.
+- Control `picture`, params (all settings, saved; nothing live, so
+  `stripLive` has nothing to do): `pictures` (up to 24 hashes), `seconds`
+  (time on each, default 30), `order` (`list`/`shuffle`), `transition`.
+  The list is ~400 bytes a screen at most, so it stays in the layout (NVS);
+  if that gets tight, it moves to a file like drawings.
+- The screen's state reports `picturesMissing` (hashes in its list the board
+  doesn't hold, e.g. after a wipe), so Command Center can send them again.
+  A missing picture is skipped; with none left the screen says "No pictures".
+- Capabilities: `pictures: {maxBytes, formats}`.
+
+**Board steps:**
+1. Picture store and the upload API: raw streamed PUT, hash and signature
+   checks, list, delete, eviction, capability. Tested from a script: good
+   files, nine kinds of bad one, a dropped connection mid-upload, a full
+   store. Check the upload doesn't block the loop or the screens.
+2. `picture` control, one still: decode JPEG (LovyanGFX), PNG, WebP or BMP
+   (Makapix's decoders) into a 115 KB PSRAM picture once; a still costs
+   nothing per frame after that (tile diff sends nothing).
+3. Slideshow: `seconds`, `order`, `transition` (`contentId()` per picture).
+   The next picture is decoded ahead into a second buffer so the change
+   never waits on flash; ~230 KB PSRAM a screen while showing a slideshow.
+4. Animation: a 240x240 GIF is too big to decode up front (115 KB a frame,
+   Makapix's 1 MB budget holds ~9), so the file stays compressed in PSRAM
+   and AnimatedGIF decodes one frame per tick into the picture. Measure the
+   cost per frame and with several animated screens; cap the frame rate if
+   core 0 can't keep up. Animated WebP the same way if libwebp's demuxer
+   allows it, otherwise first frame only.
+5. Docs: `docs/pictures.md` (the API and limits), README's control table,
+   and Command Center's `docs/orbit-api.md`.
+
+**Command Center (OrbIt-Command-Center):**
+1. Rust side: `persistence/pictures.rs` (`pictures.json` plus a folder of
+   originals and the finished 240x240 files, like `clock_faces.rs`), and
+   `device/client.rs` commands to list, upload and delete pictures.
+2. A "Pictures" rail section: a grid of round thumbnails; import by file
+   picker or drag and drop; a cropper (pan and zoom in the circle) that
+   saves the crop with the original, so it can be re-cropped later.
+   Stills are sent as JPEG (photos) or PNG (few colours or sharp edges),
+   whichever is smaller.
+3. `PictureForm`: pick pictures for the screen as an ordered list (drag to
+   reorder), `seconds`, `order`, `transition`; the board's free space
+   shown, with a warning before it runs out.
+4. Sync on Apply, as `clockFaceSync` does: upload what the screens need
+   and the board lacks, then the bulk POST. A screen reporting
+   `picturesMissing` gets them on the next Apply. Profiles carry the
+   `pictures` param; applying one uploads what it needs.
+5. Animated GIFs: frames read with the WebView's `ImageDecoder`, cropped,
+   re-encoded as GIF (a small encoder such as gifenc), refused over 1 MB
+   with a hint to shorten or simplify it. `ScreenPreview` tiles play them.
+
 ## Open decisions
 
 - None right now.
