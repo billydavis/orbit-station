@@ -719,6 +719,27 @@ uses is never removed.
    cost per frame and with several animated screens; cap the frame rate if
    core 0 can't keep up. Animated WebP the same way if libwebp's demuxer
    allows it, otherwise first frame only.
+   Done, checked on the screens (screen 2). `ui/GifPlayer` keeps the GIF
+   compressed and draws one frame at a time onto a canvas (transparency,
+   disposal 2 and 3: a frame to be undone saves only its own rectangle),
+   looping. Measured on core 1 for full-screen 240x240 frames: 19 ms
+   (moving shapes), 26 ms (colour sweep), 72 ms (noise) a frame, too much
+   for the render task, so the loader decodes frames too: it copies the
+   frame showing into a third buffer and decodes the next over it; the
+   render task swaps it in when due. If the loader falls behind, the
+   animation slows, not the other screens (they kept their rates).
+   Played, against the GIF's own rate: shapes 11-14.6 of 16.7 fps, sweep
+   8.4-9.8 of 12.5, noise 5.6-6.8 of 10; frames that change the whole
+   screen keep the sender ~95% busy. A GIF that leaves a slideshow and
+   comes back carries on where it paused; a one-frame GIF is a still.
+   With under 1 MB of PSRAM left, a GIF shows its first frame. Animated
+   WebP: first frame only (a frame takes 300-470 ms); before this it
+   didn't show at all (the Makapix decoder decodes every frame).
+   Bug found: each draw (~40 a second while animating) built a String key
+   from the params, churning internal RAM; the lowest largest free block
+   fell to 37 KB. Now a 32-bit hash: largest block steady at 65 KB, lowest
+   50 KB (82 KB before the loader's 12 KB stack). Loader stack peaked at
+   ~2.5 KB with GIFs.
 5. Docs: `docs/pictures.md` (the API and limits), README's control table,
    and Command Center's `docs/orbit-api.md`.
 
