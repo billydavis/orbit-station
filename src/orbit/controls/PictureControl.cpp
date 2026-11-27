@@ -1,9 +1,11 @@
 #include "PictureControl.h"
+#include "core/Health.h"
 #include "makapix/Artwork.h"
 #include "orbit/Pictures.h"
 #include "orbit/Transition.h"
 #include "ui/Text.h"
 #include <LittleFS.h>
+#include <algorithm>
 
 namespace orbit {
 
@@ -12,7 +14,17 @@ namespace orbit {
         // Decoded size allowed for a GIF or WebP's frames (only the first is
         // shown so far).
         constexpr size_t DECODE_BUDGET = 1024 * 1024;
+        // How often a slideshow checks whether it's time to change.
+        constexpr uint32_t TICK_MS = 250;
         const char *const ORDERS[] = {"list", "shuffle", nullptr};
+
+        // ---- The loader: decodes the next picture off the render task ----
+
+        struct Job {
+            PictureControl::Screen *screen;
+            int index;
+        };
+        QueueHandle_t jobs = nullptr;
 
         // A whole file in PSRAM; freed by the caller.
         uint8_t *readFile(const String &path, size_t &length) {
@@ -26,6 +38,78 @@ namespace orbit {
             }
             return data;
         }
+
+        // Decodes a picture file into sprite. Returns "" or what went wrong.
+        String decodeInto(LGFX_Sprite &sprite, const uint8_t *data, size_t length, const char *&format) {
+            if (length >= 3 && data[0] == 0xFF && data[1] == 0xD8) {
+                format = "jpeg";
+                sprite.fillScreen(TFT_BLACK);
+                return sprite.drawJpg(data, length, 0, 0) ? "" : "unreadable JPEG";
+            }
+            format = data[0] == 0x89 ? "png" : data[0] == 'G' ? "gif" : "webp";
+            String error;
+            auto art = makapix::decode(data, length, "", DECODE_BUDGET, error);
+            if (!art) return error;
+            if (art->width != SIZE || art->height != SIZE || art->frames.empty()) return "not 240x240";
+            const uint16_t *src = art->frames[0];
+            uint16_t *dst = (uint16_t *) sprite.getBuffer();
+            for (int i = 0; i < SIZE * SIZE; i++) dst[i] = __builtin_bswap16(src[i]); // sprites hold byte-swapped RGB565
+            return "";
+        }
+
+        void load(PictureControl::Screen &s, int index) {
+            const uint32_t start = millis();
+            PictureControl::Buffer &b = s.ahead;
+            String error;
+            const char *format = "?";
+            if (!b.sprite) {
+                b.sprite = new LGFX_Sprite();
+                b.sprite->setPsram(true);
+                b.sprite->setColorDepth(16);
+            }
+            if (!b.sprite->getBuffer() && !b.sprite->createSprite(SIZE, SIZE)) error = "out of memory";
+            size_t length = 0;
+            uint8_t *data = error.length() ? nullptr : readFile(pictures::path(b.hash), length);
+            if (!error.length() && !data) error = "can't read the file";
+            if (data) {
+                error = decodeInto(*b.sprite, data, length, format);
+                free(data);
+            }
+            s.problem = error;
+            if (error.length()) {
+                Serial.printf("Picture: screen %d can't show %s: %s\n", index, b.hash.c_str(), error.c_str());
+            } else {
+                Serial.printf("Picture: screen %d loaded %s (%s, %lu ms, loader stack %u bytes spare)\n", index, b.hash.c_str(), format,
+                              (unsigned long) (millis() - start), (unsigned) uxTaskGetStackHighWaterMark(nullptr));
+            }
+            s.state = error.length() ? PictureControl::Failed : PictureControl::Ready;
+        }
+
+        void loaderTask(void *) {
+            Job job;
+            for (;;) {
+                if (xQueueReceive(jobs, &job, portMAX_DELAY) == pdTRUE) load(*job.screen, job.index);
+            }
+        }
+
+        void startLoader() {
+            if (jobs) return;
+            jobs = xQueueCreate(8, sizeof(Job));
+            // Internal RAM. Decoding a 240x240 picture used at most ~3.4 KB
+            // (lossless WebP the most); load() logs what's spare.
+            xTaskCreatePinnedToCore(loaderTask, "pictures", 12288, nullptr, 1, nullptr, 1);
+        }
+
+        // Asks the loader for hash in the screen's ahead buffer.
+        void request(PictureControl::Screen &s, int index, const String &hash) {
+            startLoader();
+            s.ahead.hash = hash;
+            s.state = PictureControl::Loading;
+            Job job = {&s, index};
+            if (xQueueSend(jobs, &job, 0) != pdTRUE) s.state = PictureControl::Idle; // full: asked again next tick
+        }
+
+        bool contains(const std::vector<String> &v, const String &x) { return std::find(v.begin(), v.end(), x) != v.end(); }
     }
 
     int PictureControl::parse(JsonObjectConst in, JsonObject out, String &error) const {
@@ -64,79 +148,98 @@ namespace orbit {
         return 0;
     }
 
-    // Reads and decodes a picture into the screen's cache. False (with the
-    // cache's problem set) if it can't.
-    bool PictureControl::load(int screen, const String &hash) {
-        Cache &c = cache[screen];
-        c.hash = hash;
-        c.problem = "";
-        const uint32_t start = millis();
-        size_t length = 0;
-        uint8_t *data = readFile(pictures::path(hash), length);
-        if (!data) {
-            c.problem = "Can't read the picture";
-            return false;
+    // The pictures the board holds, from the list, without repeats or ones
+    // that failed; shuffled if asked.
+    void PictureControl::rebuild(Screen &s, JsonObjectConst p, const String &key) {
+        if (key != s.key || s.storeGeneration != pictures::generation()) s.failed.clear(); // something new to try
+        s.key = key;
+        s.storeGeneration = pictures::generation();
+        s.upcoming = "";
+        s.sequence.clear();
+        for (JsonVariantConst v : p["pictures"].as<JsonArrayConst>()) {
+            const String hash = v.as<String>();
+            if (!contains(s.sequence, hash) && !contains(s.failed, hash) && pictures::has(hash)) s.sequence.push_back(hash);
         }
-        if (!c.sprite) {
-            c.sprite = new LGFX_Sprite();
-            c.sprite->setPsram(true);
-            c.sprite->setColorDepth(16);
+        if (strcmp(p["order"] | "list", "shuffle") == 0) {
+            for (int i = s.sequence.size() - 1; i > 0; i--) std::swap(s.sequence[i], s.sequence[esp_random() % (i + 1)]);
         }
-        if (!c.sprite->getBuffer() && !c.sprite->createSprite(SIZE, SIZE)) {
-            free(data);
-            c.problem = "Out of memory";
-            return false;
+    }
+
+    // The picture to show after the current one (the first if there's
+    // none). A shuffle starts a new round, in a new order, after the last.
+    String PictureControl::nextAfter(Screen &s, bool shuffle) {
+        const int n = s.sequence.size();
+        if (n == 0) return "";
+        const auto at = std::find(s.sequence.begin(), s.sequence.end(), s.shown.hash);
+        if (at == s.sequence.end()) return s.sequence[0];
+        const int i = at - s.sequence.begin();
+        if (i + 1 < n) return s.sequence[i + 1];
+        if (shuffle && n > 1) {
+            // A new round; never the picture showing now first.
+            for (int k = n - 1; k > 0; k--) std::swap(s.sequence[k], s.sequence[esp_random() % (k + 1)]);
+            if (s.sequence[0] == s.shown.hash) std::swap(s.sequence[0], s.sequence[1 + esp_random() % (n - 1)]);
         }
-        const char *format;
-        String error;
-        if (length >= 3 && data[0] == 0xFF && data[1] == 0xD8) {
-            format = "jpeg";
-            c.sprite->fillScreen(TFT_BLACK);
-            if (!c.sprite->drawJpg(data, length, 0, 0)) error = "unreadable JPEG";
-        } else {
-            format = "png/gif/webp";
-            auto art = makapix::decode(data, length, "", DECODE_BUDGET, error);
-            if (art && (art->width != SIZE || art->height != SIZE || art->frames.empty())) {
-                error = "not 240x240";
-                art.reset();
-            }
-            if (art) {
-                const uint16_t *src = art->frames[0];
-                uint16_t *dst = (uint16_t *) c.sprite->getBuffer();
-                for (int i = 0; i < SIZE * SIZE; i++) dst[i] = __builtin_bswap16(src[i]); // sprites hold byte-swapped RGB565
-            }
-        }
-        free(data);
-        if (error.length()) {
-            c.problem = "Can't show this picture";
-            Serial.printf("Picture: screen %d can't show %s: %s\n", screen, hash.c_str(), error.c_str());
-            return false;
-        }
-        Serial.printf("Picture: screen %d shows %s (%s, %lu ms to load)\n", screen, hash.c_str(), format, (unsigned long) (millis() - start));
-        return true;
+        return s.sequence[0];
+    }
+
+    uint32_t PictureControl::refreshMs(int screen, JsonObjectConst) const {
+        const Screen &s = screens[screen];
+        // Waiting for the loader, or a slideshow to run.
+        return s.state == Loading || s.sequence.size() > 1 || (s.shown.hash.isEmpty() && !s.sequence.empty()) ? TICK_MS : 0;
     }
 
     void PictureControl::draw(LGFX_Sprite &spr, JsonObjectConst p, const DrawContext &ctx) {
-        Cache &c = cache[ctx.screen];
-        // The first picture the board holds.
-        String wanted;
-        JsonArrayConst list = p["pictures"];
-        for (JsonVariantConst v : list) {
-            const String hash = v.as<String>();
-            if (pictures::has(hash)) {
-                wanted = hash;
-                break;
+        Screen &s = screens[ctx.screen];
+        const bool shuffle = strcmp(p["order"] | "list", "shuffle") == 0;
+        String key = p["order"] | "list";
+        for (JsonVariantConst v : p["pictures"].as<JsonArrayConst>()) key += v.as<const char *>();
+        if (key != s.key || s.storeGeneration != pictures::generation()) rebuild(s, p, key);
+
+        if (s.state != Loading) {
+            // The loader is done with ahead: a picture that failed drops out.
+            if (s.state == Failed) {
+                s.failed.push_back(s.ahead.hash);
+                s.ahead.hash = "";
+                s.state = Idle;
+                rebuild(s, p, key);
+            }
+            // Decided once per change: a shuffle reorders when a round ends,
+            // which would move the current picture and change the answer.
+            if (s.upcoming.isEmpty() || !contains(s.sequence, s.upcoming)) s.upcoming = nextAfter(s, shuffle);
+            const String next = s.upcoming;
+            const bool current = contains(s.sequence, s.shown.hash);
+            const bool due = !current || ctx.nowMs - s.shownAt >= p["seconds"].as<uint32_t>() * 1000UL;
+            if (next.length() && next != s.shown.hash) {
+                if (s.state == Ready && s.ahead.hash == next) {
+                    if (due) {
+                        std::swap(s.shown, s.ahead); // the old picture stays ahead, in case it's next again
+                        s.shownAt = ctx.nowMs;
+                        const String after = s.upcoming = nextAfter(s, shuffle);
+                        if (after.length() && after != s.shown.hash && after != s.ahead.hash) request(s, ctx.screen, after);
+                    }
+                } else {
+                    request(s, ctx.screen, next);
+                }
+            } else if (!current && next.isEmpty()) {
+                s.shown.hash = ""; // nothing left to show
             }
         }
-        if (wanted.length() && wanted != c.hash) load(ctx.screen, wanted);
 
-        if (wanted.length() && c.hash == wanted && c.problem.isEmpty()) {
-            memcpy(spr.getBuffer(), c.sprite->getBuffer(), SIZE * SIZE * 2);
+        const String &showing = s.shown.hash;
+        if (showing.length() && contains(s.sequence, showing)) {
+            if (ctx.pictureClean && s.drawn[ctx.picture] == showing) return; // already there
+            memcpy(spr.getBuffer(), s.shown.sprite->getBuffer(), SIZE * SIZE * 2);
+            s.drawn[ctx.picture] = showing;
             return;
         }
+        s.drawn[ctx.picture] = "";
         spr.fillScreen(TFT_BLACK);
-        const String message = wanted.length() ? c.problem : list.size() ? "Waiting for pictures" : "No pictures";
-        text::draw(spr, message, 120, 120, 13, Align::MiddleCenter, 0x7BEF, TFT_BLACK);
+        JsonArrayConst list = p["pictures"];
+        String message;
+        if (list.size() == 0) message = "No pictures";
+        else if (s.sequence.empty()) message = s.failed.empty() ? "Waiting for pictures" : "Can't show these pictures";
+        if (message.length()) text::draw(spr, message, 120, 120, 13, Align::MiddleCenter, 0x7BEF, TFT_BLACK);
+        // Otherwise the first picture is loading: black for a moment.
     }
 
     void PictureControl::report(int screen, JsonObject params) {
@@ -147,9 +250,9 @@ namespace orbit {
     }
 
     uint32_t PictureControl::contentId(int screen) const {
-        const Cache &c = cache[screen];
-        if (c.hash.isEmpty() || c.problem.length()) return 0;
-        return strtoul(c.hash.substring(0, 8).c_str(), nullptr, 16) | 1;
+        const String &hash = screens[screen].shown.hash;
+        if (hash.isEmpty()) return 0;
+        return strtoul(hash.substring(0, 8).c_str(), nullptr, 16) | 1;
     }
 
 }

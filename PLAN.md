@@ -698,6 +698,21 @@ uses is never removed.
 3. Slideshow: `seconds`, `order`, `transition` (`contentId()` per picture).
    The next picture is decoded ahead into a second buffer so the change
    never waits on flash; ~230 KB PSRAM a screen while showing a slideshow.
+   Done, checked on the screens (screen 2, then put back). A loader task
+   on core 1 decodes the next picture into the screen's second buffer;
+   the change is a swap, so the other screens no longer pause (step 2's
+   85-190 ms). Loads take 150-470 ms there, done within a second of the
+   previous change. `list` loops; `shuffle` reorders each round, never the
+   same picture twice in a row; a two-picture slideshow alternates its
+   two buffers with no loads. A picture that won't decode (a PNG with a
+   damaged body) is logged once and skipped. The slideshow is rebuilt
+   only when the params or the store change (`pictures::generation()`),
+   and a frame whose picture hasn't changed does nothing.
+   Bug found: the next picture was worked out each 250 ms tick from the
+   current one's place, and a shuffle reorders at the end of a round, so
+   the answer changed mid-load and pictures loaded twice. Now decided
+   once per change. Loader stack 12 KB of internal RAM: at most ~3.4 KB
+   used (lossless WebP the most); recheck with animation.
 4. Animation: a 240x240 GIF is too big to decode up front (115 KB a frame,
    Makapix's 1 MB budget holds ~9), so the file stays compressed in PSRAM
    and AnimatedGIF decodes one frame per tick into the picture. Measure the

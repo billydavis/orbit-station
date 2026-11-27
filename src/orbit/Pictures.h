@@ -45,4 +45,8 @@ namespace pictures {
 
     void capabilities(JsonObject out);
 
+    // Goes up whenever a picture is stored or removed, so screens know when
+    // to look at the store again.
+    uint32_t generation();
+
 }

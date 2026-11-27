@@ -3,6 +3,7 @@
 #include "core/Health.h"
 #include <LittleFS.h>
 #include <algorithm>
+#include <atomic>
 #include <mbedtls/sha256.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -13,6 +14,7 @@ namespace pictures {
     namespace {
         const char *DIR = "/pictures";
         const char *PARTIAL = "/pictures/.upload"; // the file being received
+        std::atomic<uint32_t> changes{0};
 
         // LittleFS rounds each file up to 4 KB blocks and needs a few of
         // its own while writing.
@@ -109,6 +111,7 @@ namespace pictures {
             for (const Held &h : spare) {
                 if (freeBytes() >= need) break;
                 LittleFS.remove(path(h.hash));
+                changes++;
                 Serial.printf("Pictures: removed %s (%u KB, unused) to make room\n", h.hash.c_str(), (unsigned) (h.bytes / 1024));
             }
             return freeBytes() >= need;
@@ -263,7 +266,10 @@ namespace pictures {
         if (!up.status && !up.held) {
             if (exists(path(up.hash))) LittleFS.remove(path(up.hash));
             if (!LittleFS.rename(PARTIAL, path(up.hash))) fail(500, "couldn't store the picture's file");
-            else Serial.printf("Pictures: stored %s (%s, %u KB)\n", up.hash.c_str(), format, (unsigned) (up.length / 1024));
+            else {
+                changes++;
+                Serial.printf("Pictures: stored %s (%s, %u KB)\n", up.hash.c_str(), format, (unsigned) (up.length / 1024));
+            }
         }
         const int status = up.status ? up.status : 200;
         if (status == 200) {
@@ -320,8 +326,11 @@ namespace pictures {
             error = "couldn't remove picture " + hash;
             return 500;
         }
+        changes++;
         return 200;
     }
+
+    uint32_t generation() { return changes; }
 
     void capabilities(JsonObject out) {
         out["maxBytes"] = MAX_BYTES;
