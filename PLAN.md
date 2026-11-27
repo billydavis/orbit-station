@@ -246,7 +246,8 @@ Still open:
 - Test the Makapix outage fix with WiFi up and the internet down. The `q` WiFi
   test doesn't reach that code, because Makapix waits while WiFi is down.
 - A real router reboot on the 30-second retry build.
-- A longer run to see whether the largest-block low flattens out.
+- ~~A longer run to see whether the largest-block low flattens out.~~
+  Covered by daily use instead of a set run.
 
 ### After the soak
 
