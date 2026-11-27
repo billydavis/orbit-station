@@ -681,6 +681,20 @@ uses is never removed.
 2. `picture` control, one still: decode JPEG (LovyanGFX), PNG, WebP or BMP
    (Makapix's decoders) into a 115 KB PSRAM picture once; a still costs
    nothing per frame after that (tile diff sends nothing).
+   Done, checked on the screens (screen 2, then put back). `picture`
+   accepts and saves `pictures`, `seconds`, `order` and `transition` now;
+   it shows the first picture the board holds. Each screen keeps its
+   decoded picture in a 115 KB PSRAM sprite, so a redraw (the 30 s quiet
+   refresh) is a copy: nothing re-decoded in 75 s of watching. Read and
+   decode on the render task: JPEG 85-108 ms, PNG 114-123 ms, GIF 87 ms,
+   WebP 190 ms, a pause on every screen once per change (step 3 moves it
+   to a background task). Missing pictures are skipped and reported as
+   `picturesMissing` (checked against the store when reported); a finished
+   upload redraws screens that list it (shown within the second). Deleting
+   a shown picture is refused (409). The screen comes back after a
+   restart; the layout saves only on a settings change. Right after a
+   restart the first draw waited ~12 s, as did screen 5's Makapix art:
+   startup, not pictures.
 3. Slideshow: `seconds`, `order`, `transition` (`contentId()` per picture).
    The next picture is decoded ahead into a second buffer so the change
    never waits on flash; ~230 KB PSRAM a screen while showing a slideshow.

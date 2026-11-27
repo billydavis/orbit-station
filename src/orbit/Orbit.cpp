@@ -9,6 +9,7 @@
 #include "controls/CustomControl.h"
 #include "controls/GaugeControl.h"
 #include "controls/MakapixControl.h"
+#include "controls/PictureControl.h"
 #include "controls/ScreensaverControl.h"
 #include "controls/SysMonitorControl.h"
 #include "controls/TickerControl.h"
@@ -42,9 +43,11 @@ namespace orbit {
         TickerControl tickerControl;
         MakapixControl makapixControl;
         ClaudeUsageControl claudeUsageControl;
+        PictureControl pictureControl;
         Control *const CONTROLS[] = {&blankControl,      &timeControl,        &analogClockControl, &gaugeControl,
                                      &sysMonitorControl, &countdownControl,   &customControl,      &screensaverControl,
-                                     &weatherControl,    &tickerControl,      &makapixControl,     &claudeUsageControl};
+                                     &weatherControl,    &tickerControl,      &makapixControl,     &claudeUsageControl,
+                                     &pictureControl};
         constexpr int BLANK = 0;
 
         // Every control orbit-api v1 defines. Ones not in CONTROLS yet are
@@ -653,6 +656,17 @@ namespace orbit {
             if (status != 200) {
                 sendError(status, error);
                 return;
+            }
+            // Screens that were waiting for it show it now.
+            const String hash = doc["hash"];
+            Lock lock;
+            for (Slot &s : slots) {
+                for (JsonVariantConst v : s.params["pictures"].as<JsonArrayConst>()) {
+                    if (hash == v.as<const char *>()) {
+                        s.dirty = true;
+                        s.pictureClean[0] = s.pictureClean[1] = false;
+                    }
+                }
             }
             sendJson(200, doc);
         }
